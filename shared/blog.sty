@@ -1,0 +1,116 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{blog}[2025/01/01 Blog post style]
+
+% ============================================================
+% CJK Support
+% ============================================================
+\RequirePackage{xeCJK}
+\setCJKmainfont{PingFang SC}
+\setCJKsansfont{PingFang SC}
+\setCJKmonofont{PingFang SC}
+
+% ============================================================
+% Essential Packages
+% ============================================================
+\RequirePackage{amsmath}
+\RequirePackage{amssymb}
+\RequirePackage{amsthm}
+\RequirePackage{graphicx}
+\RequirePackage{booktabs}
+\RequirePackage{listings}
+\RequirePackage{xcolor}
+\RequirePackage{hyperref}
+\RequirePackage{float}
+\RequirePackage{geometry}
+\RequirePackage{enumitem}
+\RequirePackage{caption}
+\RequirePackage{subcaption}
+
+% ============================================================
+% Page Geometry
+% ============================================================
+\geometry{
+  a4paper,
+  margin=2.5cm
+}
+
+% ============================================================
+% Hyperref Setup
+% ============================================================
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=blue!60!black,
+  urlcolor=blue!60!black,
+}
+
+% ============================================================
+% Code Listing Style
+% ============================================================
+\definecolor{codebg}{RGB}{248, 248, 248}
+\definecolor{codecomment}{RGB}{106, 153, 85}
+\definecolor{codekeyword}{RGB}{86, 156, 214}
+\definecolor{codestring}{RGB}{206, 145, 120}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekeyword}\bfseries,
+  stringstyle=\color{codestring},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  numbersep=8pt,
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=4,
+  showstringspaces=false,
+  frame=single,
+  rulecolor=\color{gray!30},
+  xleftmargin=1.5em,
+  framexleftmargin=1.5em,
+  aboveskip=1em,
+  belowskip=1em,
+  captionpos=b,
+}
+
+% ============================================================
+% Blog Metadata Commands
+% ============================================================
+\newcommand{\blogtitle}[1]{\def\@blogtitle{#1}}
+\newcommand{\blogdate}[1]{\def\@blogdate{#1}}
+\newcommand{\blogtags}[1]{\def\@blogtags{#1}}
+\newcommand{\bloglang}[1]{\def\@bloglang{#1}}
+\newcommand{\blogsummary}[1]{\def\@blogsummary{#1}}
+
+% Defaults
+\blogtitle{Untitled}
+\blogdate{\today}
+\blogtags{}
+\bloglang{en}
+\blogsummary{}
+
+% ============================================================
+% Blog Title Rendering (for PDF output)
+% ============================================================
+\newcommand{\makeblogtitle}{%
+  \begin{center}
+    {\LARGE\bfseries \@blogtitle \par}
+    \vspace{0.5em}
+    {\large \@blogdate \par}
+    \ifx\@blogtags\empty\else
+      \vspace{0.3em}
+      {\small\textit{Tags: \@blogtags} \par}
+    \fi
+  \end{center}
+  \vspace{1em}
+}
+
+% ============================================================
+% Theorem Environments
+% ============================================================
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}{Example}[section]
