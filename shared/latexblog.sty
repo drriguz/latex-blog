@@ -1,5 +1,12 @@
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{blog}[2025/01/01 Blog post style]
+\ProvidesPackage{latexblog}[2025/01/01 LaTeX blog post style]
+
+% ============================================================
+% Sidenote (Margin Note) Support
+% ============================================================
+% For PDF: use simple marginpar since tcolorbox has compatibility issues
+% For HTML: fallback to a span with class 'sidenote' (handled by CSS and Pandoc Lua filter)
+\newcommand{\sidenote}[1]{\marginpar{\footnotesize\raggedleft #1}}
 
 % ============================================================
 % CJK Support

@@ -115,14 +115,26 @@ fn discover_posts(posts_dir: &Path) -> Result<Vec<PostMeta>> {
 fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
     let output = Command::new("pandoc")
         .arg(tex_path)
-        .arg("--from=latex")
+        .arg("--from=latex+raw_tex") // Preserve unknown LaTeX macros
         .arg("--to=html5")
+        .arg("--standalone") // Required for TOC generation
+        .arg("--toc") // Generate table of contents
+        .arg("--toc-depth=2") // TOC depth up to level 2 headers
+        .arg("--citeproc") // Process citations
+        .arg(format!(
+            "--bibliography={}",
+            shared_dir.join("references.bib").display()
+        ))
         .arg("--mathjax") // outputs math in a format KaTeX auto-render can pick up
         .arg("--highlight-style=pygments")
         .arg(format!(
             "--resource-path={}:{}",
             tex_path.parent().unwrap().display(),
             shared_dir.display()
+        ))
+        .arg(format!(
+            "--lua-filter={}",
+            shared_dir.join("sidenote.lua").display()
         ))
         .output()
         .context("Failed to run pandoc. Is pandoc installed?")?;
@@ -132,10 +144,21 @@ fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
         anyhow::bail!("Pandoc failed:\n{}", stderr);
     }
 
-    let html = String::from_utf8(output.stdout)
-        .context("Pandoc produced invalid UTF-8")?;
+    let html = String::from_utf8(output.stdout).context("Pandoc produced invalid UTF-8")?;
 
-    Ok(html)
+    // Extract just the body content from the standalone HTML (remove <html>, <head>, <body> tags)
+    // Find content between <body> and </body>
+    let body_start = html.find("<body>").map(|i| i + 6);
+    let body_end = html.rfind("</body>");
+
+    let content = if let (Some(start), Some(end)) = (body_start, body_end) {
+        html[start..end].to_string()
+    } else {
+        // Fallback if body tags not found
+        html
+    };
+
+    Ok(content)
 }
 
 fn run_xelatex(post_dir: &Path, shared_dir: &Path) -> Result<PathBuf> {

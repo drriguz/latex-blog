@@ -1,5 +1,5 @@
 \documentclass[12pt]{article}
-\usepackage{blog}
+\usepackage{latexblog}
 
 % ============================================================
 % Blog Metadata
@@ -25,9 +25,11 @@ The \textbf{Discrete Fourier Transform} (DFT)\footnote{See \textit{The Scientist
 
 For a historical perspective, see \cite{cooley1965fft}.
 
-然而，直接计算 DFT 需要 $O(N^2)$ 次运算，对于大规模数据来说效率太低。1965年，
-Cooley 和 Tukey 发表了\textbf{快速傅里叶变换}（FFT）算法，将复杂度降低到
-$O(N \log N)$，使得频谱分析在实际工程中变得可行。
+
+然而，直接计算 DFT 需要 $O(N^2)$ 次运算，对于大规模数据来说效率太低。\sidenote{DFT 的直接算法复杂度很高。}
+1965年，Cooley 和 Tukey 发表了\textbf{快速傅里叶变换}（FFT）算法，将复杂度降低到 $O(N \log N)$，使得频谱分析在实际工程中变得可行。\sidenote{FFT 是信号处理领域的革命性突破。}
+
+You can also use a sidenote in English: \sidenote{This is a right margin comment for extra context.}
 
 This article walks through the mathematical foundation of the DFT, derives the radix-2
 Cooley--Tukey FFT algorithm, and provides a Python implementation.
