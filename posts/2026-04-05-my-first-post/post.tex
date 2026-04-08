@@ -1,0 +1,68 @@
+\documentclass[12pt]{article}
+\usepackage{blog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{My First Post}
+\blogdate{2026-04-05}
+\blogtags{rust, latex}
+\bloglang{en}
+\blogsummary{A brief summary of the post.}
+
+\begin{document}
+\makeblogtitle
+
+\section{Introduction}
+
+Write your introduction here.
+
+\section{Main Content}
+
+Your main content goes here. You can use:
+
+\subsection{Math}
+
+Inline math: $E = mc^2$.
+
+Display math:
+\[
+  \int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+\]
+
+\subsection{Code}
+
+\begin{lstlisting}[language=Python, caption={Example code}]
+def hello():
+    print("Hello, World!")
+\end{lstlisting}
+
+\subsection{Tables}
+
+\begin{table}[H]
+\centering
+\caption{Example table}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Name} & \textbf{Value} & \textbf{Unit} \\
+\midrule
+Speed of light & $3 \times 10^8$ & m/s \\
+Planck constant & $6.626 \times 10^{-34}$ & J·s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Figures}
+
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.8\textwidth]{images/example.png}
+%   \caption{Example figure}
+%   \label{fig:example}
+% \end{figure}
+
+\section{Conclusion}
+
+Write your conclusion here.
+
+\end{document}
