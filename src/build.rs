@@ -125,6 +125,10 @@ fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
             "--bibliography={}",
             shared_dir.join("references.bib").display()
         ))
+        .arg(format!(
+            "--csl={}",
+            shared_dir.join("numeric.csl").display()
+        ))
         .arg("--mathjax") // outputs math in a format KaTeX auto-render can pick up
         .arg("--highlight-style=pygments")
         .arg(format!(
