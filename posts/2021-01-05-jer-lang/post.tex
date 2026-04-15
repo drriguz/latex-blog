@@ -1,0 +1,383 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Jer语言(1)：语法设计}
+\blogdate{2021-01-05}
+\blogtags{JVM, Bytecode, 闲话编程, Antlr, 小实现}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+最近准备实现一个基于JVM的新语言''Jer''，一开始想先实现一个Hello world，然后逐步再朝上面添加新的功能；后来觉得还是需要先把这个语言的语法层面大致设计好再动手才行。本身是出于好玩的一个目的，但是也的确希望这个语言有一些特点，而不是单纯换一个语法而已。在这个期间思考了很多，但一直没有想到自己满意的方法，姑且先按照现在的想法设计一版出来吧。
+
+\section{设计目标}\label{ux8bbeux8ba1ux76eeux6807}
+
+我对这个语言有这些期望：
+
+\begin{itemize}
+\tightlist
+\item
+  基于JVM平台，即最终通过代码编译生成class字节码
+\item
+  跟Java能够兼容（可以互相调用）
+\item
+  尽量简单，应该基本的数据类型、流程控制等，支持OO，但对于一些高级特性例如泛型、lambda等就不考虑了
+\item
+  依然是强类型的语言
+\end{itemize}
+
+\subsection{hello world}\label{hello-world}
+
+类似Java这样一个java文件只能对应一个类也许不是也个好的办法，jer源文件中可以申明任意数量的类。对于一个hello world来说，(大概）应该长这样子：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// 导入其他类或者其中的静态方法}
+\KeywordTok{use}\NormalTok{ jer}\OperatorTok{/}\NormalTok{lang}\OperatorTok{/}\NormalTok{System}
+
+\CommentTok{// 没有定义在类中的方法对应到java中的静态方法}
+\NormalTok{main(args}\OperatorTok{:}\NormalTok{ [}\DataTypeTok{String}\NormalTok{) }\OperatorTok{=} \OperatorTok{\{}
+\NormalTok{    msg}\OperatorTok{:} \DataTypeTok{String} \OperatorTok{=} \StringTok{"hello world!"}
+\NormalTok{    println(msg)}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+其中，不需要使用分号作为行的分隔符，直接换行就行了。一个Jer源文件即对应到一个Java的类，类的名称即是文件名。
+
+\section{Jer 语法}\label{jer-ux8bedux6cd5}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{compilationUint}
+\NormalTok{    : importedType* declaration* EOF}
+\NormalTok{    ;}
+\NormalTok{declaration}
+\NormalTok{    : constantDeclaration}
+\NormalTok{    | methodDeclaration}
+\NormalTok{    | abstractDeclaration}
+\NormalTok{    | typeDeclaration}
+\NormalTok{    ;}
+\end{Highlighting}
+\end{Shaded}
+
+每一个文件中，可以包含任意：
+
+\begin{itemize}
+\tightlist
+\item
+  导入申明
+\item
+  常量变量申明
+\item
+  方法申明（即为静态函数）
+\item
+  type或者类的申明
+\end{itemize}
+
+\subsection{导入申明}\label{ux5bfcux5165ux7533ux660e}
+
+通过导入申明来引入其他包或者文件中定义的类。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{importedType}
+\NormalTok{    : USE fullPath}
+\NormalTok{    ;}
+\NormalTok{fullPath}
+\NormalTok{    : (IDENTIFIER \textquotesingle{}/\textquotesingle{})* TYPE\_NAME}
+\NormalTok{    ;}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{use}\NormalTok{ java}\OperatorTok{/}\NormalTok{lang}\OperatorTok{/}\DataTypeTok{String}
+\KeywordTok{use}\NormalTok{ java}\OperatorTok{/}\NormalTok{util}\OperatorTok{/}\NormalTok{DateTime}
+\end{Highlighting}
+\end{Shaded}
+
+这里需要考虑一个场景就是，如果是其他Jer文件中定义了常量或者静态方法，在其他文件中如何使用？
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// com/riguz/jer/Util.jer}
+\NormalTok{sum(a}\OperatorTok{:}\NormalTok{ Integer}\OperatorTok{,}\NormalTok{ b}\OperatorTok{:}\NormalTok{ Integer) }\OperatorTok{{-}\textgreater{}}\NormalTok{ Integer }\OperatorTok{=} \OperatorTok{\{}
+    \CommentTok{// ...}
+\OperatorTok{\}}
+
+\CommentTok{// com/riguz/jer/Foo.jer}
+\KeywordTok{use}\NormalTok{ com}\OperatorTok{/}\NormalTok{riguz}\OperatorTok{/}\NormalTok{jer}\OperatorTok{/}\NormalTok{Util}
+
+\NormalTok{main(args}\OperatorTok{:}\NormalTok{ [}\DataTypeTok{String}\NormalTok{) }\OperatorTok{=} \OperatorTok{\{}
+\NormalTok{    sum(}\DecValTok{1}\OperatorTok{,} \DecValTok{20}\NormalTok{)}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{常量定义}\label{ux5e38ux91cfux5b9aux4e49}
+
+常量定义跟普通的局部变量唯一的区别就是多了一个const的关键字。具体的语法在后面介绍。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{constantDeclaration}
+\NormalTok{    : CONST variableDeclaration}
+\NormalTok{    ;}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{方法}\label{ux65b9ux6cd5}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{methodDeclaration}
+\NormalTok{    : methodSignature methodImplementation?}
+\NormalTok{    ;}
+\NormalTok{methodSignature}
+\NormalTok{    : IDENTIFIER \textquotesingle{}(\textquotesingle{} formalParameters? \textquotesingle{})\textquotesingle{} functionReturnType?}
+\NormalTok{    ;}
+\NormalTok{formalParameters}
+\NormalTok{    : formalParameter (\textquotesingle{},\textquotesingle{} formalParameter)*}
+\NormalTok{    ;}
+\NormalTok{functionReturnType}
+\NormalTok{    : TO type}
+\NormalTok{    ;}
+\NormalTok{methodImplementation}
+\NormalTok{    : \textquotesingle{}=\textquotesingle{} block}
+\NormalTok{    ;}
+\NormalTok{formalParameter}
+\NormalTok{    : IDENTIFIER \textquotesingle{}:\textquotesingle{} type}
+\NormalTok{    ;}
+\end{Highlighting}
+\end{Shaded}
+
+方法分为两种，一种是有返回值的方法，另一种是没有返回值的方法（void），在定义的时候稍微有些区别：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{// 没有返回值的方法依靠方法的副作用}
+\NormalTok{main(args}\OperatorTok{:}\NormalTok{ [}\DataTypeTok{String}\NormalTok{) }\OperatorTok{=} \OperatorTok{\{}
+\NormalTok{    msg}\OperatorTok{:} \DataTypeTok{String} \OperatorTok{=} \StringTok{"hello world!"}
+\NormalTok{    println(msg)}
+\OperatorTok{\}}
+
+\CommentTok{// 返回值通过箭头表示}
+\NormalTok{sum(a}\OperatorTok{:}\NormalTok{ Integer}\OperatorTok{,}\NormalTok{ b}\OperatorTok{:}\NormalTok{ Integer) }\OperatorTok{{-}\textgreater{}}\NormalTok{ Integer }\OperatorTok{=} \OperatorTok{\{}
+    \ControlFlowTok{return}\NormalTok{ a }\OperatorTok{+}\NormalTok{ b}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{抽象类和自定义类型}\label{ux62bdux8c61ux7c7bux548cux81eaux5b9aux4e49ux7c7bux578b}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{abstractDeclaration}
+\NormalTok{    : ABSTRACT TYPE\_NAME \textquotesingle{}\{\textquotesingle{} propertyDeclaration* methodSignature*\textquotesingle{}\}\textquotesingle{}}
+\NormalTok{    ;}
+\NormalTok{typeDeclaration}
+\NormalTok{    : TYPE TYPE\_NAME typeAbstractions? \textquotesingle{}\{\textquotesingle{} propertyDeclaration* constructorDeclaration* methodDeclaration*\textquotesingle{}\}\textquotesingle{}}
+\NormalTok{    ;}
+\NormalTok{typeAbstractions}
+\NormalTok{    : IS TYPE\_NAME (\textquotesingle{},\textquotesingle{} TYPE\_NAME)*}
+\NormalTok{    ;}
+\NormalTok{propertyDeclaration}
+\NormalTok{    : IDENTIFIER \textquotesingle{}:\textquotesingle{} type}
+\NormalTok{    ;}
+\NormalTok{constructorDeclaration}
+\NormalTok{    : \textquotesingle{}(\textquotesingle{} constructorFormalArguments? \textquotesingle{})\textquotesingle{} methodImplementation}
+\NormalTok{    ;}
+\NormalTok{constructorFormalArguments}
+\NormalTok{    : constructorFormalArgument (\textquotesingle{},\textquotesingle{} constructorFormalArgument)*}
+\NormalTok{    ;}
+\NormalTok{constructorFormalArgument}
+\NormalTok{    : IDENTIFIER (\textquotesingle{}:\textquotesingle{} TYPE\_NAME)?}
+\NormalTok{    ;}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{数据类型}\label{ux6570ux636eux7c7bux578b}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{type}
+\NormalTok{    : TYPE\_NAME}
+\NormalTok{    | arrayType}
+\NormalTok{    ;}
+\NormalTok{arrayType}
+\NormalTok{    : \textquotesingle{}[\textquotesingle{} type}
+\NormalTok{    ;}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{基本数据类型}\label{ux57faux672cux6570ux636eux7c7bux578b}
+
+数据类型与Java基本一致，对应到JVM的各个数据类型：
+
+\begin{itemize}
+\tightlist
+\item
+  Bool : JVM boolean
+\item
+  Byte : JVM byte
+\item
+  Short: JVM short
+\item
+  Integer: JVM int
+\item
+  Long: JVM long
+\item
+  Float: JVM float
+\item
+  Double: JVM double
+\item
+  Char: JVM char
+\item
+  String: java/lang/String
+\end{itemize}
+
+取消java中的primitive 类型，即所有一切都是引用类型。
+
+\subsubsection{数组类型}\label{ux6570ux7ec4ux7c7bux578b}
+
+数组类型用\texttt{{[}\textless{}Type\textgreater{}}表示，例如\texttt{{[}Integer}即表示一个整数数组。
+
+\subsection{表达式}\label{ux8868ux8fbeux5f0f}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{expression}
+\NormalTok{    : primary}
+\NormalTok{    | expression bop=\textquotesingle{}.\textquotesingle{}}
+\NormalTok{        ( methodCall}
+\NormalTok{        | IDENTIFIER}
+\NormalTok{        )}
+\NormalTok{    | methodCall}
+\NormalTok{    | objectCreation}
+\NormalTok{    ;}
+\NormalTok{primary}
+\NormalTok{    : \textquotesingle{}(\textquotesingle{} expression \textquotesingle{})\textquotesingle{}}
+\NormalTok{    | literal}
+\NormalTok{    | IDENTIFIER}
+\NormalTok{    ;}
+\NormalTok{literal}
+\NormalTok{    : DECIMAL\_LITERAL}
+\NormalTok{    | FLOAT\_LITERAL}
+\NormalTok{    | CHAR\_LITERAL}
+\NormalTok{    | STRING\_LITERAL}
+\NormalTok{    | BOOL\_LITERAL}
+\NormalTok{    | NULL\_LITERAL}
+\NormalTok{    ;}
+\NormalTok{methodCall}
+\NormalTok{    : instance=IDENTIFIER? \textquotesingle{}(\textquotesingle{}methodName=IDENTIFIER methodArguments? \textquotesingle{})\textquotesingle{}}
+\NormalTok{    ;}
+\NormalTok{methodArguments}
+\NormalTok{    : expression (\textquotesingle{},\textquotesingle{} expression)*}
+\NormalTok{    ;}
+\NormalTok{objectCreation}
+\NormalTok{    : NEW \textquotesingle{}(\textquotesingle{} methodArguments? \textquotesingle{})\textquotesingle{}}
+\NormalTok{    ;}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{statement}\label{statement}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{block}
+\NormalTok{    : \textquotesingle{}\{\textquotesingle{} statement* \textquotesingle{}\}\textquotesingle{}}
+\NormalTok{    ;}
+\NormalTok{statement}
+\NormalTok{    : variableDeclaration}
+\NormalTok{    | embeddedStatement}
+\NormalTok{    ;}
+
+\NormalTok{embeddedStatement}
+\NormalTok{    : block}
+\NormalTok{    | assignment}
+\NormalTok{    | expressionStatement}
+\NormalTok{    | selectionStatement}
+\NormalTok{    | loopStatement}
+\NormalTok{    | returnStatement}
+\NormalTok{    ;}
+\NormalTok{assignment}
+\NormalTok{    : IDENTIFIER \textquotesingle{}=\textquotesingle{} expression}
+\NormalTok{    ;}
+\NormalTok{selectionStatement}
+\NormalTok{    : IF \textquotesingle{}(\textquotesingle{} expression \textquotesingle{})\textquotesingle{} statement (ELSE statement)?}
+\NormalTok{    ;}
+\NormalTok{loopStatement}
+\NormalTok{    : WHILE \textquotesingle{}(\textquotesingle{} expression \textquotesingle{})\textquotesingle{} statement}
+\NormalTok{    ;}
+\NormalTok{returnStatement}
+\NormalTok{    : RETURN expression}
+\NormalTok{    ;}
+\NormalTok{expressionStatement}
+\NormalTok{    : methodCall}
+\NormalTok{    ;}
+\NormalTok{variableDeclaration}
+\NormalTok{    : IDENTIFIER \textquotesingle{}:\textquotesingle{} type (\textquotesingle{}=\textquotesingle{} variableInitializer)?}
+\NormalTok{    ;}
+\NormalTok{variableInitializer}
+\NormalTok{    : arrayInitializer}
+\NormalTok{    | expression}
+\NormalTok{    ;}
+\NormalTok{arrayInitializer}
+\NormalTok{    : \textquotesingle{}\{\textquotesingle{} variableInitializer (\textquotesingle{},\textquotesingle{} variableInitializer)* \textquotesingle{}\}\textquotesingle{}}
+\end{Highlighting}
+\end{Shaded}
+
+\section{代码示例}\label{ux4ee3ux7801ux793aux4f8b}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{use}\NormalTok{ java}\OperatorTok{/}\NormalTok{lang}\OperatorTok{/}\DataTypeTok{String}
+\KeywordTok{use}\NormalTok{ java}\OperatorTok{/}\NormalTok{util}\OperatorTok{/}\NormalTok{DateTime}
+
+\KeywordTok{const}\NormalTok{ pi}\OperatorTok{:}\NormalTok{ Float }\OperatorTok{=} \DecValTok{3}\OperatorTok{.}\NormalTok{1415926f}
+\KeywordTok{const}\NormalTok{ msg}\OperatorTok{:} \DataTypeTok{String} \OperatorTok{=} \StringTok{"hello world"}
+\KeywordTok{const}\NormalTok{ kb}\OperatorTok{:}\NormalTok{ Integer }\OperatorTok{=} \DecValTok{1024}
+\KeywordTok{const}\NormalTok{ success}\OperatorTok{:}\NormalTok{ Boolean }\OperatorTok{=} \ConstantTok{true}
+\KeywordTok{const}\NormalTok{ id}\OperatorTok{:}\NormalTok{ Long }\OperatorTok{=} \DecValTok{12345678}
+
+\NormalTok{main(args}\OperatorTok{:}\NormalTok{ [}\DataTypeTok{String}\NormalTok{) }\OperatorTok{=} \OperatorTok{\{}
+\NormalTok{    (println }\StringTok{"Hello world"}\NormalTok{)}
+\OperatorTok{\}}
+
+\NormalTok{circleArea(radius}\OperatorTok{:}\NormalTok{ Float) }\OperatorTok{{-}\textgreater{}}\NormalTok{ Float }\OperatorTok{=} \OperatorTok{\{}
+    \ControlFlowTok{return}\NormalTok{ pi(multiply }\DecValTok{2}\OperatorTok{,}\NormalTok{ radius)}
+\OperatorTok{\}}
+
+\KeywordTok{abstract}\NormalTok{ Movable }\OperatorTok{\{}
+\NormalTok{    x}\OperatorTok{:}\NormalTok{ Integer}
+\NormalTok{    y}\OperatorTok{:}\NormalTok{ Integer}
+    \KeywordTok{move}\NormalTok{(x1}\OperatorTok{:}\NormalTok{ Integer}\OperatorTok{,}\NormalTok{ y1}\OperatorTok{:}\NormalTok{ Integer)}
+\OperatorTok{\}}
+
+\KeywordTok{abstract}\NormalTok{ Animal }\OperatorTok{\{}
+\NormalTok{    name}\OperatorTok{:} \DataTypeTok{String}
+\NormalTok{    sayHelloTo(person}\OperatorTok{:}\NormalTok{ Person)}
+\NormalTok{    address() }\OperatorTok{{-}\textgreater{}} \DataTypeTok{String}
+\OperatorTok{\}}
+
+\KeywordTok{type}\NormalTok{ Dog is Animal, Movable \{}
+\NormalTok{    (name) }\OperatorTok{=} \OperatorTok{\{}
+\NormalTok{        x }\OperatorTok{=} \DecValTok{0}
+\NormalTok{        y }\OperatorTok{=} \DecValTok{0}
+    \OperatorTok{\}}
+
+\NormalTok{    sayHelloTo(person}\OperatorTok{:}\NormalTok{ Person) }\OperatorTok{=} \OperatorTok{\{}
+\NormalTok{        (println }\StringTok{"Hello"}\NormalTok{)}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+
+\end{document}

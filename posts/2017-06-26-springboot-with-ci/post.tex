@@ -1,0 +1,107 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{使用GOCD部署一个SpringBoot应用}
+\blogdate{2017-06-26}
+\blogtags{Docker, 云计算, 容器化}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+如何自动部署 springboot 的应用？
+
+首先我们要做的是把GOCD的启动用户\texttt{go}加入到\texttt{docker}组中，这样就可以免\texttt{sudo}来执行docker的命令了
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ gpasswd }\AttributeTok{{-}a}\NormalTok{ go docker}
+\FunctionTok{sudo}\NormalTok{ /etc/init.d/docker restart}
+\ExtensionTok{newgrp} \AttributeTok{{-}}\NormalTok{ docker}
+\end{Highlighting}
+\end{Shaded}
+
+我们现在来通过GOCD部署一个eureka的服务端。eureka用作服务发现，包含server端和client端，每个微服务是一个client注册到server上。看看需要哪些包：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{dependencies }\OperatorTok{\{}
+\NormalTok{    testCompile group}\OperatorTok{:} \StringTok{\textquotesingle{}junit\textquotesingle{}}\OperatorTok{,}\NormalTok{ name}\OperatorTok{:} \StringTok{\textquotesingle{}junit\textquotesingle{}}\OperatorTok{,}\NormalTok{ version}\OperatorTok{:} \StringTok{\textquotesingle{}4.12\textquotesingle{}}
+\NormalTok{    compile group}\OperatorTok{:} \StringTok{\textquotesingle{}org.springframework.boot\textquotesingle{}}\OperatorTok{,}\NormalTok{ name}\OperatorTok{:} \StringTok{\textquotesingle{}spring{-}boot{-}starter{-}web\textquotesingle{}}\OperatorTok{,}\NormalTok{ version}\OperatorTok{:} \StringTok{\textquotesingle{}1.5.3.RELEASE\textquotesingle{}}
+\NormalTok{    compile group}\OperatorTok{:} \StringTok{\textquotesingle{}org.springframework.cloud\textquotesingle{}}\OperatorTok{,}\NormalTok{ name}\OperatorTok{:} \StringTok{\textquotesingle{}spring{-}cloud{-}starter{-}eureka{-}server\textquotesingle{}}\OperatorTok{,}\NormalTok{ version}\OperatorTok{:} \StringTok{\textquotesingle{}1.3.1.RELEASE\textquotesingle{}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+然后我们的程序写一句话就可以了：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\AttributeTok{@EnableEurekaServer}
+\AttributeTok{@SpringBootApplication}
+\KeywordTok{public} \KeywordTok{class}\NormalTok{ EurekaServerApplication }\OperatorTok{\{}
+    \KeywordTok{public} \DataTypeTok{static} \DataTypeTok{void} \FunctionTok{main}\OperatorTok{(}\BuiltInTok{String}\OperatorTok{[]}\NormalTok{ args}\OperatorTok{)\{}
+\NormalTok{        SpringApplication}\OperatorTok{.}\FunctionTok{run}\OperatorTok{(}\NormalTok{EurekaServerApplication}\OperatorTok{.}\FunctionTok{class}\OperatorTok{,}\NormalTok{ args}\OperatorTok{);}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+这样启动后就可以访问到eureka的web页面了，我们可以在application.properties中配置一些属性：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{server.port=8761}
+\NormalTok{eureka.client.register{-}with{-}eureka=false}
+\NormalTok{eureka.client.fetch{-}registry=false}
+\end{Highlighting}
+\end{Shaded}
+
+然后来想办法把应用打包到docker中。我们新建一个Dockerfile到src/main/docker中：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ConstantTok{FROM} \VariableTok{oracle}\OperatorTok{/}\VariableTok{openjdk}\OperatorTok{:}\DecValTok{8}
+\ConstantTok{VOLUME} \OperatorTok{/}\VariableTok{tmp}
+\ConstantTok{ADD} \VariableTok{eureka}\OperatorTok{{-}}\VariableTok{server}\OperatorTok{{-}}\DecValTok{1.0}\OperatorTok{{-}}\ConstantTok{SNAPSHOT}\OperatorTok{.}\VariableTok{jar} \VariableTok{app}\OperatorTok{.}\VariableTok{jar}
+\ConstantTok{RUN} \VariableTok{sh} \OperatorTok{{-}}\NormalTok{c }\StringTok{\textquotesingle{}touch /app.jar\textquotesingle{}}
+\ConstantTok{ENV} \ConstantTok{JAVA\_OPTS}\OperatorTok{=}\StringTok{""}
+\ConstantTok{ENTRYPOINT} \OperatorTok{[} \StringTok{"sh"}\OperatorTok{,} \StringTok{"{-}c"}\OperatorTok{,} \StringTok{"java $JAVA\_OPTS {-}Djava.security.egd=file:/dev/./urandom {-}jar /app.jar"} \OperatorTok{]}
+\end{Highlighting}
+\end{Shaded}
+
+然后在build.gradle中添加一个构建任务：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{buildscript }\OperatorTok{\{}
+\NormalTok{    repositories }\OperatorTok{\{}
+        \FunctionTok{mavenCentral}\OperatorTok{()}
+    \OperatorTok{\}}
+\NormalTok{    dependencies }\OperatorTok{\{}
+        \FunctionTok{classpath}\OperatorTok{(}\StringTok{"org.springframework.boot:spring{-}boot{-}gradle{-}plugin:1.5.2.RELEASE"}\OperatorTok{)}
+        \FunctionTok{classpath}\OperatorTok{(}\StringTok{\textquotesingle{}se.transmode.gradle:gradle{-}docker:1.2\textquotesingle{}}\OperatorTok{)}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\NormalTok{task }\FunctionTok{buildDocker}\OperatorTok{(}\NormalTok{type}\OperatorTok{:}\NormalTok{ Docker}\OperatorTok{,}\NormalTok{ dependsOn}\OperatorTok{:}\NormalTok{ build}\OperatorTok{)} \OperatorTok{\{}
+\NormalTok{    push }\OperatorTok{=} \KeywordTok{false}
+\NormalTok{    applicationName }\OperatorTok{=}\NormalTok{ jar}\OperatorTok{.}\NormalTok{baseName}
+\NormalTok{    dockerfile }\OperatorTok{=} \FunctionTok{file}\OperatorTok{(}\StringTok{\textquotesingle{}src/main/docker/Dockerfile\textquotesingle{}}\OperatorTok{)}
+\NormalTok{    doFirst }\OperatorTok{\{}
+\NormalTok{        copy }\OperatorTok{\{}
+\NormalTok{            from jar}
+\NormalTok{            into stageDir}
+        \OperatorTok{\}}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+这样当我们执行\texttt{gradle\ build\ buildDocker}命令的时候就会把springboot应用打包成docker镜像了。
+
+
+\end{document}

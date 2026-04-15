@@ -1,0 +1,161 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{LaTeX(1)：章节和段落}
+\blogdate{2020-02-07}
+\blogtags{TeX, ~LaTeX入门, LaTeX, 其他}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+LaTeX适用于学术论文等的写作，在这类文章中一个很重要的部分就是段落和章节了。回想起当年使用Word写作的时候调整标题是何等的痛苦，那么在LaTeX中是怎样设置段落和章节的呢？
+
+\section{标题}\label{ux6807ux9898}
+
+通过下面的命令可以生成一个默认的标题：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{\textbackslash{}title}\NormalTok{\{一种新型冠状病毒的防治方法\}}
+\FunctionTok{\textbackslash{}author}\NormalTok{\{Dr. Riguz\}}
+\FunctionTok{\textbackslash{}date}\NormalTok{\{2020{-}02{-}07\}}
+
+\FunctionTok{\textbackslash{}maketitle} \CommentTok{\% 生成标题页}
+\FunctionTok{\textbackslash{}newpage}   \CommentTok{\% 分页}
+\end{Highlighting}
+\end{Shaded}
+
+这样效果如下：
+
+\section{LaTeX段落层次}\label{latexux6bb5ux843dux5c42ux6b21}
+
+LaTeX中可以分成如下的几个部分：
+
+\begin{itemize}
+\tightlist
+\item
+  section：一级标题
+\item
+  subsection：二级标题
+\item
+  subsubsection：三级标题
+\item
+  paragraph：段落
+\item
+  subpragraph：二级段落
+\end{itemize}
+
+下面是一个例子：
+
+对应的代码如下，非常简洁：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{\textbackslash{}section}\NormalTok{\{背景\}}
+\NormalTok{首先简要介绍一下这个项目的背景。}
+\KeywordTok{\textbackslash{}subsection}\NormalTok{\{冠状病毒简介\}}
+\NormalTok{冠状病毒是一个大型病毒家族，包括引起普通感冒的病毒以及严重急性呼吸综合征冠状病毒和中东呼吸综合征冠状病毒。这一新病毒暂时命名为2019新型冠状病毒（2019{-}nCoV）。}
+\KeywordTok{\textbackslash{}subsection}\NormalTok{\{现有的防治方法\}}
+\KeywordTok{\textbackslash{}subsubsection}\NormalTok{\{居家隔离法\}}
+\NormalTok{待在家里不出门。}
+\KeywordTok{\textbackslash{}subsubsection}\NormalTok{\{自我安慰法\}}
+\NormalTok{反正也死不了。}
+\KeywordTok{\textbackslash{}section}\NormalTok{\{新的防治方法\}}
+\NormalTok{实在编不下去了：}
+\KeywordTok{\textbackslash{}paragraph}\NormalTok{\{气功\}}
+\NormalTok{是一种中华民族祖传的神功。气功又可以分为两种：}
+\KeywordTok{\textbackslash{}subparagraph}\NormalTok{\{硬气功\}}
+\NormalTok{可以开山断石，金钟罩铁布衫。}
+\KeywordTok{\textbackslash{}subparagraph}\NormalTok{\{内功\}}
+\NormalTok{可以运行体内的真气激发一种神奇的力量运行于经络之上。}
+\end{Highlighting}
+\end{Shaded}
+
+\section{生成目录}\label{ux751fux6210ux76eeux5f55}
+
+\subsection{目录}\label{ux76eeux5f55}
+
+想要生成目录页特别简单，一个命令就可以搞定：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{\textbackslash{}tableofcontents}
+\FunctionTok{\textbackslash{}newpage}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{自定义级别}\label{ux81eaux5b9aux4e49ux7ea7ux522b}
+
+如果在生成目录的时候，只希望生成到特定的级别，可以这样设置：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{\textbackslash{}setcounter}\NormalTok{\{tocdepth\}\{2\}}
+\FunctionTok{\textbackslash{}tableofcontents}
+\end{Highlighting}
+\end{Shaded}
+
+这样生成的目录就只会到\texttt{subsection}级别。当然这样设置的话会对所有的内容生效，如果只是希望对某个章节生效怎么办呢？
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{\textbackslash{}addtocontents}\NormalTok{\{toc\}\{}\FunctionTok{\textbackslash{}setcounter}\NormalTok{\{tocdepth\}\{1\}\}}
+\KeywordTok{\textbackslash{}section}\NormalTok{\{背景\}}
+
+\CommentTok{\% ...}
+\FunctionTok{\textbackslash{}addtocontents}\NormalTok{\{toc\}\{}\FunctionTok{\textbackslash{}setcounter}\NormalTok{\{tocdepth\}\{3\}\}}
+\KeywordTok{\textbackslash{}section}\NormalTok{\{新的防治方法\}}
+\end{Highlighting}
+\end{Shaded}
+
+可以像上面这样，在需要设置的章节之前设置，然后再其他地方恢复默认级别。
+
+\subsection{行距}\label{ux884cux8ddd}
+
+如果希望调整行距，可以使用
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{\textbackslash{}doublespacing}
+\FunctionTok{\textbackslash{}tableofcontents}
+\FunctionTok{\textbackslash{}newpage}
+\FunctionTok{\textbackslash{}singlespacing}
+\end{Highlighting}
+\end{Shaded}
+
+单倍行距：
+
+双倍行距：
+
+\subsection{图表目录}\label{ux56feux8868ux76eeux5f55}
+
+另外，如果想对图表生成目录，可以采用：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{\textbackslash{}begin}\NormalTok{\{}\ExtensionTok{appendix}\NormalTok{\}}
+    \FunctionTok{\textbackslash{}listoffigures}
+    \FunctionTok{\textbackslash{}listoftables}
+\KeywordTok{\textbackslash{}end}\NormalTok{\{}\ExtensionTok{appendix}\NormalTok{\}  }
+\end{Highlighting}
+\end{Shaded}
+
+参考：
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://www.latex-tutorial.com/tutorials/sections/}{Using LaTeX paragraphs and sections}
+\item
+  \href{http://yakeworld.myesci.com/node/1397}{xelatex中文换行}
+\item
+  \href{https://www.ntg.nl/doc/biemesderfer/ltxcrib.pdf}{LATEX Command Summary}
+\end{itemize}
+
+
+\end{document}

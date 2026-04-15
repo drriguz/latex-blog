@@ -1,0 +1,164 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Netty(1)：介绍}
+\blogdate{2020-09-02}
+\blogtags{框架, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+Netty是一个高性能的异步事件驱动的网络应用框架，本质上是对NIO进行了高层的抽象，使得可以轻松的创建服务器和客户端，极大简化了诸如TCP和UDP套接字的操作。
+
+\section{入门}\label{ux5165ux95e8}
+
+\subsection{核心概念}\label{ux6838ux5fc3ux6982ux5ff5}
+
+\begin{figure}
+\centering
+\pandocbounded{\includegraphics[keepaspectratio,alt={Netty architecture}]{https://netty.io/3.8/guide/images/architecture.png}}
+\caption{Netty architecture}
+\end{figure}
+
+Netty中的一些核心概念：
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{Channel}对应到Socket
+\item
+  \texttt{EventLoop}用来控制流、多线程处理以及并发
+\item
+  \texttt{ChannelFuture}用来实现异步通知
+\end{itemize}
+
+\subsection{ECHO server}\label{echo-server}
+
+最简单的例子是构建一个echo server，发过来什么同样返回什么。
+
+首先需要实现一个Handler，定义如何处理消息：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \KeywordTok{class}\NormalTok{ EchoServerHandler }\KeywordTok{extends}\NormalTok{ ChannelInboundHandlerAdapter }\OperatorTok{\{}
+    \AttributeTok{@Override}
+    \KeywordTok{public} \DataTypeTok{void} \FunctionTok{channelRead}\OperatorTok{(}\NormalTok{ChannelHandlerContext ctx}\OperatorTok{,} \BuiltInTok{Object}\NormalTok{ msg}\OperatorTok{)} \KeywordTok{throws} \BuiltInTok{Exception} \OperatorTok{\{}
+        \CommentTok{// handler需要去释放msg对象(引用计数）}
+        \CommentTok{// 这里不用去手动release msg，因为writeAndFlush里面已经处理了}
+\NormalTok{        ctx}\OperatorTok{.}\FunctionTok{writeAndFlush}\OperatorTok{(}\NormalTok{msg}\OperatorTok{);}
+    \OperatorTok{\}}
+
+    \AttributeTok{@Override}
+    \KeywordTok{public} \DataTypeTok{void} \FunctionTok{exceptionCaught}\OperatorTok{(}\NormalTok{ChannelHandlerContext ctx}\OperatorTok{,} \BuiltInTok{Throwable}\NormalTok{ cause}\OperatorTok{)} \KeywordTok{throws} \BuiltInTok{Exception} \OperatorTok{\{}
+\NormalTok{        cause}\OperatorTok{.}\FunctionTok{printStackTrace}\OperatorTok{();}
+\NormalTok{        ctx}\OperatorTok{.}\FunctionTok{close}\OperatorTok{();}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+然后利用\texttt{ServiceBootStrap}来启动
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \KeywordTok{class}\NormalTok{ EchoServer }\OperatorTok{\{}
+    \KeywordTok{private} \DataTypeTok{final} \DataTypeTok{int}\NormalTok{ port}\OperatorTok{;}
+
+    \KeywordTok{public} \FunctionTok{EchoServer}\OperatorTok{(}\DataTypeTok{int}\NormalTok{ port}\OperatorTok{)} \OperatorTok{\{}
+        \KeywordTok{this}\OperatorTok{.}\FunctionTok{port} \OperatorTok{=}\NormalTok{ port}\OperatorTok{;}
+    \OperatorTok{\}}
+
+    \KeywordTok{public} \DataTypeTok{void} \FunctionTok{run}\OperatorTok{()} \KeywordTok{throws} \BuiltInTok{InterruptedException} \OperatorTok{\{}
+\NormalTok{        EventLoopGroup bossGroup }\OperatorTok{=} \KeywordTok{new} \FunctionTok{NioEventLoopGroup}\OperatorTok{();}
+\NormalTok{        EventLoopGroup workerGroup }\OperatorTok{=} \KeywordTok{new} \FunctionTok{NioEventLoopGroup}\OperatorTok{();}
+        \ControlFlowTok{try} \OperatorTok{\{}
+\NormalTok{            ServerBootstrap bootstrap }\OperatorTok{=} \KeywordTok{new} \FunctionTok{ServerBootstrap}\OperatorTok{();}
+\NormalTok{            bootstrap}\OperatorTok{.}\FunctionTok{group}\OperatorTok{(}\NormalTok{bossGroup}\OperatorTok{,}\NormalTok{ workerGroup}\OperatorTok{)}
+                    \OperatorTok{.}\FunctionTok{channel}\OperatorTok{(}\NormalTok{NioServerSocketChannel}\OperatorTok{.}\FunctionTok{class}\OperatorTok{)}
+                    \OperatorTok{.}\FunctionTok{childHandler}\OperatorTok{(}\KeywordTok{new}\NormalTok{ ChannelInitializer}\OperatorTok{\textless{}}\BuiltInTok{SocketChannel}\OperatorTok{\textgreater{}()} \OperatorTok{\{}
+                        \AttributeTok{@Override}
+                        \KeywordTok{protected} \DataTypeTok{void} \FunctionTok{initChannel}\OperatorTok{(}\BuiltInTok{SocketChannel}\NormalTok{ ch}\OperatorTok{)} \KeywordTok{throws} \BuiltInTok{Exception} \OperatorTok{\{}
+\NormalTok{                            ch}\OperatorTok{.}\FunctionTok{pipeline}\OperatorTok{().}\FunctionTok{addLast}\OperatorTok{(}\KeywordTok{new} \FunctionTok{EchoServerHandler}\OperatorTok{());}
+                        \OperatorTok{\}}
+                    \OperatorTok{\})}
+                    \OperatorTok{.}\FunctionTok{option}\OperatorTok{(}\NormalTok{ChannelOption}\OperatorTok{.}\FunctionTok{SO\_BACKLOG}\OperatorTok{,} \DecValTok{128}\OperatorTok{)}
+                    \OperatorTok{.}\FunctionTok{childOption}\OperatorTok{(}\NormalTok{ChannelOption}\OperatorTok{.}\FunctionTok{SO\_KEEPALIVE}\OperatorTok{,} \KeywordTok{true}\OperatorTok{);}
+
+\NormalTok{            ChannelFuture f }\OperatorTok{=}\NormalTok{ bootstrap}\OperatorTok{.}\FunctionTok{bind}\OperatorTok{(}\NormalTok{port}\OperatorTok{).}\FunctionTok{sync}\OperatorTok{();}
+\NormalTok{            f}\OperatorTok{.}\FunctionTok{channel}\OperatorTok{().}\FunctionTok{closeFuture}\OperatorTok{().}\FunctionTok{sync}\OperatorTok{();}
+        \OperatorTok{\}} \ControlFlowTok{finally} \OperatorTok{\{}
+\NormalTok{            workerGroup}\OperatorTok{.}\FunctionTok{shutdownGracefully}\OperatorTok{();}
+\NormalTok{            bossGroup}\OperatorTok{.}\FunctionTok{shutdownGracefully}\OperatorTok{();}
+        \OperatorTok{\}}
+    \OperatorTok{\}}
+
+    \KeywordTok{public} \DataTypeTok{static} \DataTypeTok{void} \FunctionTok{main}\OperatorTok{(}\BuiltInTok{String}\OperatorTok{[]}\NormalTok{ args}\OperatorTok{)} \KeywordTok{throws} \BuiltInTok{InterruptedException} \OperatorTok{\{}
+        \KeywordTok{new} \FunctionTok{EchoServer}\OperatorTok{(}\DecValTok{9999}\OperatorTok{).}\FunctionTok{run}\OperatorTok{();}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\section{基本原理}\label{ux57faux672cux539fux7406}
+
+\subsection{EventLoop与Server Channel、Channel}\label{eventloopux4e0eserver-channelchannel}
+
+其运行原理如图：
+
+\begin{figure}
+\centering
+\pandocbounded{\includegraphics[keepaspectratio,alt={EventLoopGroup and Channels}]{https://dpzbhybb2pdcj.cloudfront.net/maurer/Figures/03fig04_alt.jpg}}
+\caption{EventLoopGroup and Channels}
+\end{figure}
+
+\begin{itemize}
+\tightlist
+\item
+  左边只有一个ServerChannel，代表服务器上监听某个端口的套接字，所以实际上也只需要一个EventLoop就可以了
+\item
+  右边代表建立的客户端连接，每一个连接都对应到一个EventLoop，当有很多个连接的时候，这些连接是会共享其中的EventLoop的。
+\end{itemize}
+
+\subsection{ChannelPipeline}\label{channelpipeline}
+
+每次建立连接的时候，都会调用\texttt{ChannelInitializer}，这个类负责安装一些自定义的\texttt{ChannelHandler}到\texttt{ChannelPipeline}中。 实际上的程序可能对应到多个入站和出站的ChannelHandler，它们的执行顺序是由它们被添加的顺序所决定的，类似这样：
+
+\begin{figure}
+\centering
+\pandocbounded{\includegraphics[keepaspectratio,alt={Channel Pipeline}]{https://dpzbhybb2pdcj.cloudfront.net/maurer/Figures/03fig03_alt.jpg}}
+\caption{Channel Pipeline}
+\end{figure}
+
+\subsection{ChannelHandler}\label{channelhandler}
+
+ChanelHandler又有很多的类型，比如：
+
+\begin{itemize}
+\tightlist
+\item
+  编码器和解码器, 例如\texttt{ByteToMessageDecoder}、\texttt{ProtobufEncoder}等
+\item
+  \texttt{SimpleChannelInboundHandler\textless{}T\textgreater{}}，用来处理简单的逻辑比如收到消息后完成业务逻辑，只需要实现其中的\texttt{void\ channelRead0(ChannelHandlerContext\ ctx,\ I\ msg)}方法即可
+\end{itemize}
+
+\subsection{Bootstrap}\label{bootstrap}
+
+前面使用\texttt{ServerBootstrap}类来启动了服务器上的socket监听，如果是客户端程序可以使用\texttt{Bootstrap}类来完成。一个比较明显的区别就是，客户端程序只需要一个\texttt{EventLoopGroup}而服务端通常会需要两个。
+
+Ref:
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://netty.io/wiki/user-guide-for-4.x.html}{Netty User guide for 4.x}
+\item
+  \href{https://livebook.manning.com/book/netty-in-action}{Netty in Action}
+\end{itemize}
+
+
+\end{document}

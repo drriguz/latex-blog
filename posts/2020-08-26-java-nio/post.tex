@@ -1,0 +1,312 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Linux I/O模型与Java NIO}
+\blogdate{2020-08-26}
+\blogtags{NIO, 刨根问底, 探索分析}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+I/O 即Input与Output，包含了文件的读写或者是网络的I/O。在Linux/Unix中有五种I/O模型：
+
+\begin{itemize}
+\tightlist
+\item
+  blocking I/O
+\item
+  nonblocking I/O
+\item
+  I/O multiplexing (select and poll)
+\item
+  signal driven I/O (SIGIO)
+\item
+  asynchronous I/O (the POSIX aio\_functions)
+\end{itemize}
+
+Java 从Java SE 1.4开始引入NIO，在Java 7推出了NIO 2。那么，不同的IO模型之间具体有什么差异，又该如何使用呢？
+
+\section{I/O 模型}\label{io-ux6a21ux578b}
+
+在I/O操作中，通常是分为两个阶段的：
+
+\begin{itemize}
+\tightlist
+\item
+  首先是等待数据就绪。
+\item
+  然后将数据从kernel复制到process
+\end{itemize}
+
+例如在socket中，第一个阶段就是等待从网络发送数据过来，然后存入内核的缓冲区。然后第二个阶段，将接收到的数据从内核缓冲区拷贝到用户程序中。
+
+\subsection{五种I/O模型}\label{ux4e94ux79cdioux6a21ux578b}
+
+\subsubsection{Blocking I/O}\label{blocking-io}
+
+Blocking I/O即阻塞式IO，在Linux中默认所有的socket都是blocking的。在这种模式下，两个阶段都是阻塞的。这个过程类似这样：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{data }\OperatorTok{=}\NormalTok{ recvfrom}\OperatorTok{(}\NormalTok{socket}\OperatorTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Non-blocking I/O}\label{non-blocking-io}
+
+将socket设置为non-blocking之后，如果数据没有就绪的时候不会阻塞住请求进程而是立即返回一个错误(\texttt{EWOULDBLOCK})，这样请求进程可以不断尝试去获取是否有数据就绪（这个过程称之为\textbf{\emph{polling}})。然而，在数据的拷贝阶段，这个过程还是blocking的。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ControlFlowTok{do} \OperatorTok{\{}
+\NormalTok{    data }\OperatorTok{=}\NormalTok{ recvfrom}\OperatorTok{(}\NormalTok{socket}\OperatorTok{)}
+\OperatorTok{\}} \ControlFlowTok{while}\OperatorTok{(}\NormalTok{data }\OperatorTok{==}\NormalTok{ EWOULDBLOCK}\OperatorTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{I/O multiplexing}\label{io-multiplexing}
+
+I/O multiplexing(多路复用)是通过单个进程管理多个网络连接的一种方式，通常有\texttt{select}，\texttt{pool}和\texttt{epoll}等几种方式。在这种模式下，socket会被设置为non-blocking，通过不断轮询所有的socket，直到某个socket有数据则返回。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ControlFlowTok{while}\OperatorTok{(}\KeywordTok{true}\OperatorTok{)} \OperatorTok{\{}
+\NormalTok{    socket }\OperatorTok{=}\NormalTok{ select}\OperatorTok{(}\NormalTok{sockets}\OperatorTok{)} \CommentTok{// 这里如果没有一个socket是就绪的就会一直阻塞}
+\NormalTok{    data }\OperatorTok{=}\NormalTok{ recvfrom}\OperatorTok{(}\NormalTok{socket}\OperatorTok{)}  \CommentTok{// 同样从内核拷贝数据到process的时候也是block的}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+一个更具体的例子：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ControlFlowTok{while}\OperatorTok{(}\DecValTok{1}\OperatorTok{)\{}
+\NormalTok{    FD\_ZERO}\OperatorTok{(\&}\NormalTok{rset}\OperatorTok{);}
+    \ControlFlowTok{for} \OperatorTok{(}\NormalTok{i }\OperatorTok{=} \DecValTok{0}\OperatorTok{;}\NormalTok{ i}\OperatorTok{\textless{}} \DecValTok{5}\OperatorTok{;}\NormalTok{ i}\OperatorTok{++} \OperatorTok{)} \OperatorTok{\{}
+\NormalTok{        FD\_SET}\OperatorTok{(}\NormalTok{fds}\OperatorTok{[}\NormalTok{i}\OperatorTok{],\&}\NormalTok{rset}\OperatorTok{);}
+    \OperatorTok{\}}
+
+\NormalTok{    puts}\OperatorTok{(}\StringTok{"round again"}\OperatorTok{);}
+\NormalTok{    select}\OperatorTok{(}\NormalTok{max}\OperatorTok{+}\DecValTok{1}\OperatorTok{,} \OperatorTok{\&}\NormalTok{rset}\OperatorTok{,}\NormalTok{ NULL}\OperatorTok{,}\NormalTok{ NULL}\OperatorTok{,}\NormalTok{ NULL}\OperatorTok{);}
+
+    \ControlFlowTok{for}\OperatorTok{(}\NormalTok{i}\OperatorTok{=}\DecValTok{0}\OperatorTok{;}\NormalTok{i}\OperatorTok{\textless{}}\DecValTok{5}\OperatorTok{;}\NormalTok{i}\OperatorTok{++)} \OperatorTok{\{}
+        \ControlFlowTok{if} \OperatorTok{(}\NormalTok{FD\_ISSET}\OperatorTok{(}\NormalTok{fds}\OperatorTok{[}\NormalTok{i}\OperatorTok{],} \OperatorTok{\&}\NormalTok{rset}\OperatorTok{))\{}
+\NormalTok{            memset}\OperatorTok{(}\NormalTok{buffer}\OperatorTok{,}\DecValTok{0}\OperatorTok{,}\NormalTok{MAXBUF}\OperatorTok{);}
+\NormalTok{            read}\OperatorTok{(}\NormalTok{fds}\OperatorTok{[}\NormalTok{i}\OperatorTok{],}\NormalTok{ buffer}\OperatorTok{,}\NormalTok{ MAXBUF}\OperatorTok{);}
+\NormalTok{            puts}\OperatorTok{(}\NormalTok{buffer}\OperatorTok{);}
+        \OperatorTok{\}}
+    \OperatorTok{\}}   
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+除了使用\texttt{select}之外，还可以使用\texttt{pool}和\texttt{epoll}，但是本质上两个阶段都会block。看起来除了可以处理多个socket连接之外没啥好处，但是如果考虑到使用多线程的话，那么\texttt{recvfrom}可以在线程中处理，理论上可以提高吞吐。
+
+\subsubsection{Signal driven I/O}\label{signal-driven-io}
+
+这种模式下首先将socket设置为singal-driven，然后通过\texttt{sigaction}注册一个回调。这个过程不是block的，一旦数据ready之后，一个\texttt{SIGIO}的信号会发送到process中，然后拷贝数据阶段依然是blocking的。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{handler }\OperatorTok{=} \OperatorTok{()} \OperatorTok{{-}\textgreater{}} \OperatorTok{\{}
+\NormalTok{    recvfrom}\OperatorTok{(}\NormalTok{socket}\OperatorTok{)}
+\OperatorTok{\}}
+\NormalTok{sigaction}\OperatorTok{(}\NormalTok{socket}\OperatorTok{,}\NormalTok{ handler}\OperatorTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{Asynchronous I/O}\label{asynchronous-io}
+
+在AIO模式下，两个阶段都是nonblocking的，跟signal-driven I/O模式的区别在于，前者是当数据ready之后通知应用去读取；而AIO是内核直接将数据拷贝到process完成之后通知process。
+
+\subsection{同步于异步、阻塞与非阻塞}\label{ux540cux6b65ux4e8eux5f02ux6b65ux963bux585eux4e0eux975eux963bux585e}
+
+同步异步、阻塞和非阻塞比较confusing, POSIX中是这样定义的：
+
+\begin{itemize}
+\tightlist
+\item
+  同步I/O是指请求的进程被阻塞一直到操作结束
+\item
+  异步I/O不导致请求进程阻塞
+\end{itemize}
+
+根据这个定义，除了AIO之外，其他四种都是synchronous的，因为数据复制阶段（recvfrom)是阻塞的。
+
+\begin{figure}
+\centering
+\pandocbounded{\includegraphics[keepaspectratio,alt={I/O Models}]{http://www.masterraghu.com/subjects/np/introduction/unix_network_programming_v1.3/files/06fig06.gif}}
+\caption{I/O Models}
+\end{figure}
+
+\section{Java中的I/O}\label{javaux4e2dux7684io}
+
+\subsection{blocking I/O}\label{blocking-io-1}
+
+在Java中构建一个简单的Socket服务器，为每一个连接新建一个线程处理：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \KeywordTok{class}\NormalTok{ EchoServer }\OperatorTok{\{}
+    \KeywordTok{public} \DataTypeTok{static} \DataTypeTok{void} \FunctionTok{main}\OperatorTok{(}\BuiltInTok{String}\OperatorTok{[]}\NormalTok{ args}\OperatorTok{)} \KeywordTok{throws} \BuiltInTok{IOException} \OperatorTok{\{}
+        \BuiltInTok{ServerSocket}\NormalTok{ server }\OperatorTok{=} \KeywordTok{new} \BuiltInTok{ServerSocket}\OperatorTok{();}
+\NormalTok{        server}\OperatorTok{.}\FunctionTok{bind}\OperatorTok{(}\KeywordTok{new} \BuiltInTok{InetSocketAddress}\OperatorTok{(}\DecValTok{9000}\OperatorTok{));}
+
+        \ControlFlowTok{while} \OperatorTok{(}\KeywordTok{true}\OperatorTok{)} \OperatorTok{\{}
+            \BuiltInTok{Socket}\NormalTok{ socket }\OperatorTok{=}\NormalTok{ server}\OperatorTok{.}\FunctionTok{accept}\OperatorTok{();}
+            \KeywordTok{new} \BuiltInTok{Thread}\OperatorTok{(}\FunctionTok{clientHandler}\OperatorTok{(}\NormalTok{socket}\OperatorTok{)).}\FunctionTok{start}\OperatorTok{();}
+        \OperatorTok{\}}
+    \OperatorTok{\}}
+
+    \KeywordTok{private} \DataTypeTok{static} \BuiltInTok{Runnable} \FunctionTok{clientHandler}\OperatorTok{(}\BuiltInTok{Socket}\NormalTok{ socket}\OperatorTok{)} \OperatorTok{\{}
+        \ControlFlowTok{return} \OperatorTok{()} \OperatorTok{{-}\textgreater{}} \OperatorTok{\{}
+            \ControlFlowTok{try} \OperatorTok{\{}
+                \BuiltInTok{BufferedReader}\NormalTok{ reader }\OperatorTok{=} \KeywordTok{new} \BuiltInTok{BufferedReader}\OperatorTok{(}\KeywordTok{new} \BuiltInTok{InputStreamReader}\OperatorTok{(}\NormalTok{socket}\OperatorTok{.}\FunctionTok{getInputStream}\OperatorTok{()));}
+                \BuiltInTok{PrintWriter}\NormalTok{ writer }\OperatorTok{=} \KeywordTok{new} \BuiltInTok{PrintWriter}\OperatorTok{(}\KeywordTok{new} \BuiltInTok{OutputStreamWriter}\OperatorTok{(}\NormalTok{socket}\OperatorTok{.}\FunctionTok{getOutputStream}\OperatorTok{()));}
+
+                \BuiltInTok{String}\NormalTok{ line }\OperatorTok{=} \StringTok{""}\OperatorTok{;}
+                \ControlFlowTok{while} \OperatorTok{(!}\StringTok{"/quit"}\OperatorTok{.}\FunctionTok{equals}\OperatorTok{(}\NormalTok{line}\OperatorTok{))} \OperatorTok{\{}
+\NormalTok{                    line }\OperatorTok{=}\NormalTok{ reader}\OperatorTok{.}\FunctionTok{readLine}\OperatorTok{();}
+\NormalTok{                    writer}\OperatorTok{.}\FunctionTok{write}\OperatorTok{(}\NormalTok{line }\OperatorTok{+} \StringTok{"}\SpecialCharTok{\textbackslash{}n}\StringTok{"}\OperatorTok{);}
+\NormalTok{                    writer}\OperatorTok{.}\FunctionTok{flush}\OperatorTok{();}
+                \OperatorTok{\}}
+            \OperatorTok{\}} \ControlFlowTok{catch} \OperatorTok{(}\BuiltInTok{IOException}\NormalTok{ ex}\OperatorTok{)} \OperatorTok{\{}
+\NormalTok{                ex}\OperatorTok{.}\FunctionTok{printStackTrace}\OperatorTok{();}
+            \OperatorTok{\}}
+        \OperatorTok{\};}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{non-blocking I/O}\label{non-blocking-io-1}
+
+Java NIO中主要有以下的一些类：
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://docs.oracle.com/javase/8/docs/api/java/nio/package-summary.html\#buffers}{Buffers}: 数据缓冲容器
+\item
+  \href{https://docs.oracle.com/javase/8/docs/api/java/nio/charset/package-summary.html}{Charsets}: 字符集编码和解码
+\item
+  \href{https://docs.oracle.com/javase/8/docs/api/java/nio/channels/package-summary.html}{Channels}: 可以进行I/O操作的连接
+\item
+  Selectors, selection keys: 用来实现multiplexed, non-blocking I/O机制
+\end{itemize}
+
+其中，\texttt{Buffer}中可以存储固定大小的容器，而其中的\texttt{ByteBuffer}类比较特殊：
+
+\begin{itemize}
+\tightlist
+\item
+  可以作为I/O操作的目标
+\item
+  可以分配为direct buffer，JVM会尝试进行原生的I/O操作以提高性能
+\item
+  可以直接map文件的一部分到buffer中(\texttt{MappedByteBuffer})，支持一些额外的文件操作
+\item
+  可以自定义字节序
+\end{itemize}
+
+使用Nio实现一个EchoServer:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \KeywordTok{class}\NormalTok{ NioEchoServer }\OperatorTok{\{}
+    \KeywordTok{public} \DataTypeTok{static} \DataTypeTok{void} \FunctionTok{main}\OperatorTok{(}\BuiltInTok{String}\OperatorTok{[]}\NormalTok{ args}\OperatorTok{)} \OperatorTok{\{}
+        \ControlFlowTok{try} \OperatorTok{(}\BuiltInTok{Selector}\NormalTok{ selector }\OperatorTok{=} \BuiltInTok{Selector}\OperatorTok{.}\FunctionTok{open}\OperatorTok{();}
+             \BuiltInTok{ServerSocketChannel}\NormalTok{ serverSocket }\OperatorTok{=} \BuiltInTok{ServerSocketChannel}\OperatorTok{.}\FunctionTok{open}\OperatorTok{())} \OperatorTok{\{}
+\NormalTok{            serverSocket}\OperatorTok{.}\FunctionTok{bind}\OperatorTok{(}\KeywordTok{new} \BuiltInTok{InetSocketAddress}\OperatorTok{(}\DecValTok{9999}\OperatorTok{));}
+\NormalTok{            serverSocket}\OperatorTok{.}\FunctionTok{configureBlocking}\OperatorTok{(}\KeywordTok{false}\OperatorTok{);}
+\NormalTok{            serverSocket}\OperatorTok{.}\FunctionTok{register}\OperatorTok{(}\NormalTok{selector}\OperatorTok{,} \BuiltInTok{SelectionKey}\OperatorTok{.}\FunctionTok{OP\_ACCEPT}\OperatorTok{);}
+            \BuiltInTok{ByteBuffer}\NormalTok{ buffer }\OperatorTok{=} \BuiltInTok{ByteBuffer}\OperatorTok{.}\FunctionTok{allocate}\OperatorTok{(}\DecValTok{4}\OperatorTok{);}
+
+            \ControlFlowTok{while} \OperatorTok{(}\KeywordTok{true}\OperatorTok{)} \OperatorTok{\{}
+\NormalTok{                selector}\OperatorTok{.}\FunctionTok{select}\OperatorTok{();}
+                \DataTypeTok{final} \BuiltInTok{Set}\OperatorTok{\textless{}}\BuiltInTok{SelectionKey}\OperatorTok{\textgreater{}}\NormalTok{ selectedKeys }\OperatorTok{=}\NormalTok{ selector}\OperatorTok{.}\FunctionTok{selectedKeys}\OperatorTok{();}
+                \BuiltInTok{Iterator}\OperatorTok{\textless{}}\BuiltInTok{SelectionKey}\OperatorTok{\textgreater{}}\NormalTok{ iterator }\OperatorTok{=}\NormalTok{ selectedKeys}\OperatorTok{.}\FunctionTok{iterator}\OperatorTok{();}
+                \ControlFlowTok{while} \OperatorTok{(}\NormalTok{iterator}\OperatorTok{.}\FunctionTok{hasNext}\OperatorTok{())} \OperatorTok{\{}
+                    \DataTypeTok{final} \BuiltInTok{SelectionKey}\NormalTok{ key }\OperatorTok{=}\NormalTok{ iterator}\OperatorTok{.}\FunctionTok{next}\OperatorTok{();}
+                    \ControlFlowTok{if} \OperatorTok{(}\NormalTok{key}\OperatorTok{.}\FunctionTok{isAcceptable}\OperatorTok{())} \OperatorTok{\{}
+                        \FunctionTok{accept}\OperatorTok{(}\NormalTok{selector}\OperatorTok{,}\NormalTok{ serverSocket}\OperatorTok{);}
+                    \OperatorTok{\}} \ControlFlowTok{else} \ControlFlowTok{if} \OperatorTok{(}\NormalTok{key}\OperatorTok{.}\FunctionTok{isReadable}\OperatorTok{())} \OperatorTok{\{}
+                        \FunctionTok{readAndAnswer}\OperatorTok{(}\NormalTok{buffer}\OperatorTok{,}\NormalTok{ key}\OperatorTok{);}
+                    \OperatorTok{\}} \ControlFlowTok{else} \OperatorTok{\{}
+                        \ControlFlowTok{throw} \KeywordTok{new} \BuiltInTok{RuntimeException}\OperatorTok{(}\StringTok{"Unsupported operation"}\OperatorTok{);}
+                    \OperatorTok{\}}
+\NormalTok{                    iterator}\OperatorTok{.}\FunctionTok{remove}\OperatorTok{();}
+                \OperatorTok{\}}
+            \OperatorTok{\}}
+
+        \OperatorTok{\}} \ControlFlowTok{catch} \OperatorTok{(}\BuiltInTok{IOException}\NormalTok{ e}\OperatorTok{)} \OperatorTok{\{}
+\NormalTok{            e}\OperatorTok{.}\FunctionTok{printStackTrace}\OperatorTok{();}
+        \OperatorTok{\}}
+    \OperatorTok{\}}
+
+    \KeywordTok{private} \DataTypeTok{static} \DataTypeTok{void} \FunctionTok{accept}\OperatorTok{(}\DataTypeTok{final} \BuiltInTok{Selector}\NormalTok{ selector}\OperatorTok{,}
+                               \DataTypeTok{final} \BuiltInTok{ServerSocketChannel}\NormalTok{ serverSocket}\OperatorTok{)}
+            \KeywordTok{throws} \BuiltInTok{IOException} \OperatorTok{\{}
+        \BuiltInTok{SocketChannel}\NormalTok{ client }\OperatorTok{=}\NormalTok{ serverSocket}\OperatorTok{.}\FunctionTok{accept}\OperatorTok{();}
+\NormalTok{        client}\OperatorTok{.}\FunctionTok{configureBlocking}\OperatorTok{(}\KeywordTok{false}\OperatorTok{);}
+\NormalTok{        client}\OperatorTok{.}\FunctionTok{register}\OperatorTok{(}\NormalTok{selector}\OperatorTok{,} \BuiltInTok{SelectionKey}\OperatorTok{.}\FunctionTok{OP\_READ}\OperatorTok{);}
+    \OperatorTok{\}}
+
+    \KeywordTok{private} \DataTypeTok{static} \DataTypeTok{void} \FunctionTok{readAndAnswer}\OperatorTok{(}\DataTypeTok{final} \BuiltInTok{ByteBuffer}\NormalTok{ buffer}\OperatorTok{,}
+                                      \DataTypeTok{final} \BuiltInTok{SelectionKey}\NormalTok{ key}\OperatorTok{)}
+            \KeywordTok{throws} \BuiltInTok{IOException} \OperatorTok{\{}
+        \DataTypeTok{final} \BuiltInTok{SocketChannel}\NormalTok{ client }\OperatorTok{=} \OperatorTok{(}\BuiltInTok{SocketChannel}\OperatorTok{)}\NormalTok{ key}\OperatorTok{.}\FunctionTok{channel}\OperatorTok{();}
+\NormalTok{        client}\OperatorTok{.}\FunctionTok{read}\OperatorTok{(}\NormalTok{buffer}\OperatorTok{);}
+\NormalTok{        buffer}\OperatorTok{.}\FunctionTok{flip}\OperatorTok{();}
+        \BuiltInTok{String}\NormalTok{ s }\OperatorTok{=}\NormalTok{ StandardCharsets}\OperatorTok{.}\FunctionTok{UTF\_8}\OperatorTok{.}\FunctionTok{decode}\OperatorTok{(}\NormalTok{buffer}\OperatorTok{).}\FunctionTok{toString}\OperatorTok{();}
+        \BuiltInTok{System}\OperatorTok{.}\FunctionTok{out}\OperatorTok{.}\FunctionTok{println}\OperatorTok{(}\StringTok{"{-}\textgreater{} "} \OperatorTok{+}\NormalTok{ s}\OperatorTok{);}
+\NormalTok{        buffer}\OperatorTok{.}\FunctionTok{clear}\OperatorTok{();}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Asynchronous I/O}\label{asynchronous-io-1}
+
+Java支持AIO，具体有这些类：
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{AsynchronousFileChannel}: 用于文件异步读写；
+\item
+  \texttt{AsynchronousSocketChannel}: 客户端异步socket；
+\item
+  \texttt{AsynchronousServerSocketChannel}: 服务器异步socket。
+\end{itemize}
+
+但性能上可能并没有太大的提升（Linux平台），以致于Netty中移除了对NIO.2的支持：
+
+\begin{quote}
+I don't think NIO.2 will have better performance than NIO, because NIO.2 still make use of select/poll system calls and thread pools to simulate asynchronous IO. One example is that Netty removed NIO.2 support in 4.0.0, because the author think that NIO.2 doesn't bring better performance than NIO in Linux platform.
+\end{quote}
+
+See also:
+
+\begin{itemize}
+\tightlist
+\item
+  \href{http://www.masterraghu.com/subjects/np/introduction/unix_network_programming_v1.3/ch06lev1sec2.html}{6.2 I/O Models}
+\item
+  \href{https://devarea.com/linux-io-multiplexing-select-vs-poll-vs-epoll/\#.X0W520lS-L8}{Linux -- IO Multiplexing -- Select vs Poll vs Epoll}
+\item
+  \href{https://medium.com/@clu1022/\%E6\%B7\%BA\%E8\%AB\%87i-o-model-32da09c619e6}{淺談I/O Model}
+\item
+  \href{https://www.baeldung.com/java-nio-selector}{Introduction to the Java NIO Selector}
+\item
+  \href{https://stackoverflow.com/questions/27541283/io-performance-selector-nio-vs-asynchronouschannelnio-2}{IO performance: Selector (NIO) vs AsynchronousChannel(NIO.2)}
+\end{itemize}
+
+
+\end{document}

@@ -39,3 +39,17 @@ pub fn render_index(tera: &Tera, posts: &[crate::metadata::PostMeta]) -> Result<
     let html = tera.render("index.html", &ctx)?;
     Ok(html)
 }
+
+pub fn render_tag_index(
+    tera: &Tera,
+    tag: &str,
+    posts: &[crate::metadata::PostMeta],
+) -> Result<String> {
+    let mut ctx = Context::new();
+    ctx.insert("tag", tag);
+    ctx.insert("posts", posts);
+    ctx.insert("root_path", "../../");
+    ctx.insert("lang", "en");
+    let html = tera.render("tag.html", &ctx)?;
+    Ok(html)
+}

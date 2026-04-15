@@ -1,0 +1,274 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Rust(2) Ownership}
+\blogdate{2019-11-18}
+\blogtags{Rust, 编程语言, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+传统的C语言需要开发人员手动管理内存，而像Java、Go这样的语言是通过垃圾回收机制自动进行内存管理。但通常垃圾回收机制本身较为复杂且需要不定期的进行（也就是说实际当内存不在需要的时候并不一定能得到及时的释放）。而rust语言采取的所有权机制（Ownership）是它区别于其他语言的一个重要特征，它被用来进行高效安全的内存管理。
+
+\section{Ownership概念}\label{ownershipux6982ux5ff5}
+
+在rust中，内存是由一个所有权管理系统进行管理的，它会使用一些由编译器在编译时生成的规则。这个内存管理系统的好处在于，不会像JVM stop-the-world一样暂停应用程序或者使得应用程序在运行的时候变慢。那么到底怎么样去定义ownership呢？有如下的一套规则：
+
+\begin{itemize}
+\tightlist
+\item
+  rust中每一个值都有一个变量作为与其对应的owner
+\item
+  一个值在同一时间有且仅有一个owner
+\item
+  当owner离开作用域的时候，值所在的空间会被释放(调用对象的\texttt{drop}方法)
+\end{itemize}
+
+这和C++的析构函数如出一辙，称之为\emph{Resource Acquisition Is Initialization (RAII)}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+
+\OperatorTok{\{}
+    \KeywordTok{let}\NormalTok{ s }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello"}\NormalTok{)}\OperatorTok{;} \CommentTok{// s is valid from this point forward}
+
+    \CommentTok{// do stuff with s}
+\OperatorTok{\}}                                  \CommentTok{// 程序走到这里会调用 drop 方法释放掉内存}
+\end{Highlighting}
+\end{Shaded}
+
+\section{作用域转移(Move)}\label{ux4f5cux7528ux57dfux8f6cux79fbmove}
+
+上面说到，当对象离开作用域的时候，会调用\texttt{drop}函数来释放掉占用的内存，那么，如果遇到下面的情况呢？
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ s1 }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello"}\NormalTok{)}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ s2 }\OperatorTok{=}\NormalTok{ s1}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+字符串在内存中实际上是分为了两部分，
+
+\begin{figure}
+\centering
+\pandocbounded{\includesvg[keepaspectratio]{images/rust_string_mm.svg}}
+\caption{Rust String copy}
+\end{figure}
+
+其中，左边的值存放在栈上，是固定的长度的，另外存了一个内存地址指向实际的内容，而这部分内容也就是右边的部分，是存放在堆上面的。当我们将s2赋值给s1的时候，实际上并没有进行深拷贝，也就是说堆上的数据仍旧是那个，只是将s2的指针指向了这一部分内存。那么现在存在一个问题就是，s1和s2离开作用域的时候，都会去调用\texttt{drop}释放这部分内存，这部分内存会被释放两次，显然这是不对的。为了解决这一个问题，rust中当将一个变量赋值给另一个变量的时候，会发生作用域转移，旧的对象不再有效，而释放内存这个操作，会由转移后的对象来承担这个职责。所以，一旦作用域转移后，就不能再使用这个对象了：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+ \OperatorTok{{-}{-}\textgreater{}}\NormalTok{ test}\OperatorTok{.}\NormalTok{rs}\OperatorTok{:}\DecValTok{5}\OperatorTok{:}\DecValTok{9}
+  \OperatorTok{|}
+\DecValTok{5} \OperatorTok{|}     \KeywordTok{let}\NormalTok{ s1 }\OperatorTok{=}\NormalTok{ s}\OperatorTok{;}
+  \OperatorTok{|}         \OperatorTok{\^{}\^{}}\NormalTok{ help}\OperatorTok{:}\NormalTok{ consider prefixing with an underscore}\OperatorTok{:}\NormalTok{ \textasciigrave{}\_s1\textasciigrave{}}
+  \OperatorTok{|}
+  \OperatorTok{=}\NormalTok{ note}\OperatorTok{:}\NormalTok{ \textasciigrave{}}\AttributeTok{\#[}\NormalTok{warn}\AttributeTok{(}\NormalTok{unused\_variables}\AttributeTok{)]}\NormalTok{\textasciigrave{} on by }\KeywordTok{default}
+
+\NormalTok{error[E0382]}\OperatorTok{:}\NormalTok{ borrow of moved value}\OperatorTok{:}\NormalTok{ \textasciigrave{}s\textasciigrave{}}
+ \OperatorTok{{-}{-}\textgreater{}}\NormalTok{ test}\OperatorTok{.}\NormalTok{rs}\OperatorTok{:}\DecValTok{6}\OperatorTok{:}\DecValTok{20}
+  \OperatorTok{|}
+\DecValTok{4} \OperatorTok{|}     \KeywordTok{let}\NormalTok{ s }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello"}\NormalTok{)}\OperatorTok{;}
+  \OperatorTok{|}         \OperatorTok{{-}} \KeywordTok{move}\NormalTok{ occurs because \textasciigrave{}s\textasciigrave{} has }\KeywordTok{type}\NormalTok{ \textasciigrave{}std::string::String\textasciigrave{}, which does not implement the \textasciigrave{}Copy\textasciigrave{} trait}
+\NormalTok{5 |     let s1 }\OperatorTok{=}\NormalTok{ s}\OperatorTok{;}
+  \OperatorTok{|}              \OperatorTok{{-}}\NormalTok{ value moved here}
+\DecValTok{6} \OperatorTok{|}     \PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\}"}\OperatorTok{,}\NormalTok{ s)}\OperatorTok{;}
+  \OperatorTok{|}                    \OperatorTok{\^{}}\NormalTok{ value borrowed here after }\KeywordTok{move}
+
+\NormalTok{error}\OperatorTok{:}\NormalTok{ aborting due to previous error}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{\texorpdfstring{使用\texttt{clone}进行深拷贝}{使用clone进行深拷贝}}\label{ux4f7fux7528cloneux8fdbux884cux6df1ux62f7ux8d1d}
+
+因为默认就是浅拷贝，所以拷贝操作可以认为是很轻量级的，对性能没有什么影响。但如果的确需要深拷贝呢？那么应该使用\texttt{clone}方法，这跟其他语言差不多。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ s }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello"}\NormalTok{)}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ s1 }\OperatorTok{=}\NormalTok{ s}\OperatorTok{.}\NormalTok{clone()}\OperatorTok{;}            \CommentTok{// 进行深拷贝操作}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\}}\SpecialCharTok{\textbackslash{}n}\StringTok{\{\}"}\OperatorTok{,}\NormalTok{ s}\OperatorTok{,}\NormalTok{ s1)}\OperatorTok{;}     \CommentTok{// 这样s作用域并没有被转移，仍然可用}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{简单对象的深拷贝}\label{ux7b80ux5355ux5bf9ux8c61ux7684ux6df1ux62f7ux8d1d}
+
+对于简单的基本类型而言，实际上拷贝之后，也并没有发生作用域转移，这点值得注意。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ x }\OperatorTok{=} \DecValTok{3.14}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ y }\OperatorTok{=}\NormalTok{ x}\OperatorTok{;}                   \CommentTok{// 没问题，拷贝之后x即失效}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"x=\{\} y=\{\}"}\OperatorTok{,}\NormalTok{ x}\OperatorTok{,}\NormalTok{ y)}\OperatorTok{;}
+
+\KeywordTok{let}\NormalTok{ x }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello"}\NormalTok{)}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ y }\OperatorTok{=}\NormalTok{ x}\OperatorTok{;}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"x=\{\} y=\{\}"}\OperatorTok{,}\NormalTok{ x}\OperatorTok{,}\NormalTok{ y)}\OperatorTok{;} \CommentTok{// 不可以，因为x已经invalid了}
+\end{Highlighting}
+\end{Shaded}
+
+原因是对于这些对象的拷贝完全发生在栈上，rust认为采取上面的作用域转移的策略对它们没有任何价值，所以这样设计。
+
+\subsection{自定义对象的深拷贝}\label{ux81eaux5b9aux4e49ux5bf9ux8c61ux7684ux6df1ux62f7ux8d1d}
+
+实质上刚才所说的简单对象复制后没有发生作用域转移的深层原因是因为它们实现了一个特殊的接口\texttt{Copy}，rust中有这些对象实现了这个接口：
+
+\begin{itemize}
+\tightlist
+\item
+  基本类型，包括数值类型、布尔、浮点数、字符类型
+\item
+  只包含实现了\texttt{Copy}接口的元组
+\end{itemize}
+
+对于我们自己的对象，也可以实现\texttt{Copy}接口，从而使得拷贝之后，作用域不会转移。如下：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\AttributeTok{\#[}\NormalTok{derive}\AttributeTok{(}\BuiltInTok{Debug}\OperatorTok{,} \BuiltInTok{Copy}\OperatorTok{,} \BuiltInTok{Clone}\AttributeTok{)]}
+\KeywordTok{struct}\NormalTok{ Point }\OperatorTok{\{}
+\NormalTok{    x}\OperatorTok{:} \DataTypeTok{i32}\OperatorTok{,}
+\NormalTok{    y}\OperatorTok{:} \DataTypeTok{i32}\OperatorTok{,}
+\OperatorTok{\}}
+
+\KeywordTok{fn}\NormalTok{ main() }\OperatorTok{\{}
+    \KeywordTok{let}\NormalTok{ p1 }\OperatorTok{=}\NormalTok{ Point }\OperatorTok{\{}\NormalTok{ x}\OperatorTok{:} \DecValTok{10}\OperatorTok{,}\NormalTok{ y}\OperatorTok{:} \DecValTok{10} \OperatorTok{\};}
+    \KeywordTok{let}\NormalTok{ \_p2 }\OperatorTok{=}\NormalTok{ p1}\OperatorTok{;}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"p1:\{:?\}"}\OperatorTok{,}\NormalTok{ p1)}\OperatorTok{;} \CommentTok{// 没问题，因为Point继承了Copy接口}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{方法传参和返回值也会发生作用域转移}\label{ux65b9ux6cd5ux4f20ux53c2ux548cux8fd4ux56deux503cux4e5fux4f1aux53d1ux751fux4f5cux7528ux57dfux8f6cux79fb}
+
+如同拷贝一样，将变量传递给函数同样会发生作用域转移，例如：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{fn}\NormalTok{ output(}\DataTypeTok{str}\OperatorTok{:} \DataTypeTok{String}\NormalTok{) }\OperatorTok{\{}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"=\textgreater{}\{\}"}\OperatorTok{,} \DataTypeTok{str}\NormalTok{)}\OperatorTok{;}
+\OperatorTok{\}}
+
+\KeywordTok{fn}\NormalTok{ main() }\OperatorTok{\{}
+    \KeywordTok{let}\NormalTok{ x }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello"}\NormalTok{)}\OperatorTok{;}
+\NormalTok{    output(x)}\OperatorTok{;}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"x=\{\}"}\OperatorTok{,}\NormalTok{ x)}\OperatorTok{;}     \CommentTok{// 不可以，因为x作用域已经转移了}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+上述的Copy规则同样适用于通过方法调用发生的作用域转移。同样，如果一个函数有返回值，那么通过返回值会更改Ownership。现在可以注意到，一旦一个变量传给了某个函数调用之后，那么这个变量就被转移了，如果我们希望多次使用这个变量，岂不是很麻烦？唯一的办法就是再将它从返回值返回回来，像这样：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{fn}\NormalTok{ output(}\DataTypeTok{str}\OperatorTok{:} \DataTypeTok{String}\NormalTok{) }\OperatorTok{{-}\textgreater{}} \DataTypeTok{String} \OperatorTok{\{}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"=\textgreater{}\{\}"}\OperatorTok{,} \DataTypeTok{str}\NormalTok{)}\OperatorTok{;}
+    \DataTypeTok{str}
+\OperatorTok{\}}
+
+\KeywordTok{fn}\NormalTok{ generate() }\OperatorTok{{-}\textgreater{}} \DataTypeTok{String} \OperatorTok{\{}
+    \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello world!"}\NormalTok{)}
+\OperatorTok{\}}
+
+\KeywordTok{fn}\NormalTok{ main() }\OperatorTok{\{}
+    \KeywordTok{let}\NormalTok{ x }\OperatorTok{=}\NormalTok{ generate()}\OperatorTok{;}
+    \KeywordTok{let}\NormalTok{ x }\OperatorTok{=}\NormalTok{ output(x)}\OperatorTok{;}         \CommentTok{// 通过返回值再把x传出来，重新获得所有权}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"x=\{\}"}\OperatorTok{,}\NormalTok{ x)}\OperatorTok{;}       \CommentTok{// 不可以，因为x作用域已经转移了}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+那么如果我们函数本身也有一个返回值怎么办？虽然我们理论上也可以通过元组的方式来实现，但是代码会变得很奇怪，所以并不是真正的解决方法。
+
+\section{引用(Reference)}\label{ux5f15ux7528reference}
+
+解决上述问题的一个办法就是，变量引用。如果是一个变量引用的话，那么就不会夺取该变量的所有权，如下：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{fn}\NormalTok{ output(}\DataTypeTok{str}\OperatorTok{:} \OperatorTok{\&}\DataTypeTok{String}\NormalTok{) }\OperatorTok{\{}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"=\textgreater{}\{\}"}\OperatorTok{,} \DataTypeTok{str}\NormalTok{)}\OperatorTok{;}
+\OperatorTok{\}}
+
+\KeywordTok{fn}\NormalTok{ main() }\OperatorTok{\{}
+    \KeywordTok{let}\NormalTok{ x }\OperatorTok{=}\NormalTok{ generate()}\OperatorTok{;}
+\NormalTok{    output(}\OperatorTok{\&}\NormalTok{x)}\OperatorTok{;}                \CommentTok{// 传递x的引用，这样就不会夺取所有权了}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"x=\{\}"}\OperatorTok{,}\NormalTok{ x)}\OperatorTok{;}       \CommentTok{// 可以，因为x作用域未发生转移}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+是不是很像c++? 😅要创建引用也很简单，加一个\texttt{\&}就可以了。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ x }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello world"}\NormalTok{)}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ y}\OperatorTok{:} \OperatorTok{\&}\DataTypeTok{String} \OperatorTok{=} \OperatorTok{\&}\NormalTok{x}\OperatorTok{;}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"x=\{\} y=\{\}"}\OperatorTok{,}\NormalTok{ x}\OperatorTok{,}\NormalTok{ y)}\OperatorTok{;}   \CommentTok{// 没问题，y是一个引用，并不会夺取所有权}
+\end{Highlighting}
+\end{Shaded}
+
+\section{借用(Borrowing)}\label{ux501fux7528borrowing}
+
+引用变量作为函数的参数，称之为借用(borrowing)。所谓有借有还，再借不难，借的东西迟早都是要还回去的。如果你对借用的东西做了改变，怎么办呢？比如这样：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DecValTok{12} \OperatorTok{|} \KeywordTok{fn}\NormalTok{ output(}\DataTypeTok{str}\OperatorTok{:} \OperatorTok{\&}\DataTypeTok{String}\NormalTok{) }\OperatorTok{\{}
+   \OperatorTok{|}                \OperatorTok{{-}{-}{-}{-}{-}{-}{-}}\NormalTok{ help}\OperatorTok{:}\NormalTok{ consider changing this to be a mutable reference}\OperatorTok{:}\NormalTok{ \textasciigrave{}}\OperatorTok{\&}\KeywordTok{mut} \PreprocessorTok{std::string::}\NormalTok{String\textasciigrave{}}
+\DecValTok{13} \OperatorTok{|}     \DataTypeTok{str}\OperatorTok{.}\NormalTok{push\_str(}\StringTok{"world!"}\NormalTok{)}\OperatorTok{;}
+   \OperatorTok{|}     \OperatorTok{\^{}\^{}\^{}}\NormalTok{ \textasciigrave{}str\textasciigrave{} is a \textasciigrave{}}\OperatorTok{\&}\NormalTok{\textasciigrave{} reference}\OperatorTok{,}\NormalTok{ so the data it refers to cannot be borrowed }\KeywordTok{as}\NormalTok{ mutable}
+\end{Highlighting}
+\end{Shaded}
+
+不用担心，借用的对象默认就是不可变的，所以编译器会检测出来，不允许这样操作。如果的确需要改变怎么办呢？对于这种情况，可以使用\texttt{\&mut}创建可变的引用，当然前提是这个变量本身也要是可变的才行，否则编译器也会报错。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{fn}\NormalTok{ output(}\DataTypeTok{str}\OperatorTok{:} \OperatorTok{\&}\KeywordTok{mut} \DataTypeTok{String}\NormalTok{) }\OperatorTok{\{}
+    \DataTypeTok{str}\OperatorTok{.}\NormalTok{push\_str(}\StringTok{"world!"}\NormalTok{)}\OperatorTok{;}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"=\textgreater{}\{\}"}\OperatorTok{,} \DataTypeTok{str}\NormalTok{)}\OperatorTok{;}
+\OperatorTok{\}}
+
+\KeywordTok{fn}\NormalTok{ main() }\OperatorTok{\{}
+    \KeywordTok{let} \KeywordTok{mut}\NormalTok{ x }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello world"}\NormalTok{)}\OperatorTok{;}
+\NormalTok{    output(}\OperatorTok{\&}\KeywordTok{mut}\NormalTok{ x)}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+可变引用有一个限制就是，在同样的作用域里面至多可以有一个变量的可变引用，这样做的好处是在编译时就避免了数据竞争。rust中有以下的限制：
+
+\begin{itemize}
+\tightlist
+\item
+  在同一个scope中，最多有一个变量的可变引用
+\item
+  可变引用和不可变引用不能同时存在。这里决定是否同时存在的条件是，在可变引用之后的语句是否有不可变引用被使用。
+\end{itemize}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let} \KeywordTok{mut}\NormalTok{ s }\OperatorTok{=} \DataTypeTok{String}\PreprocessorTok{::}\NormalTok{from(}\StringTok{"hello"}\NormalTok{)}\OperatorTok{;}
+
+\KeywordTok{let}\NormalTok{ r1 }\OperatorTok{=} \OperatorTok{\&}\NormalTok{s}\OperatorTok{;} \CommentTok{// no problem}
+\KeywordTok{let}\NormalTok{ r2 }\OperatorTok{=} \OperatorTok{\&}\NormalTok{s}\OperatorTok{;} \CommentTok{// no problem}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\} and \{\}"}\OperatorTok{,}\NormalTok{ r1}\OperatorTok{,}\NormalTok{ r2)}\OperatorTok{;}
+\CommentTok{// r1 and r2 are no longer used after this point}
+
+\KeywordTok{let}\NormalTok{ r3 }\OperatorTok{=} \OperatorTok{\&}\KeywordTok{mut}\NormalTok{ s}\OperatorTok{;} \CommentTok{// no problem}
+\CommentTok{// 如果在这个地方之后还有使用r1和r2的地方，那么编译会报错}
+\CommentTok{// println!("\{\} and \{\}", r1, r2);}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\}"}\OperatorTok{,}\NormalTok{ r3)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+
+\end{document}

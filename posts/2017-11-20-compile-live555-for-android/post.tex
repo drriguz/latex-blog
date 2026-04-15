@@ -1,0 +1,78 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Compile live555 for Android}
+\blogdate{2017-11-20}
+\blogtags{Android, 移动端, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+编译 live555的库在 android 上使用。
+
+首先下载liveMedia库。解压完成可以先在linux环境下编译一遍试试，例如：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{./genMakefiles}\NormalTok{ macosx}
+\FunctionTok{make}
+\end{Highlighting}
+\end{Shaded}
+
+然后，可以利用ndk-build将它交叉编译成动态库。这时候，需要新建一个Android.mk和Application.mk文件： * Application.mk
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DataTypeTok{APP\_BUILD\_SCRIPT} \CharTok{:=}\StringTok{ Android.mk}
+\DataTypeTok{APP\_STL} \CharTok{:=}\StringTok{ gnustl\_shared}
+\DataTypeTok{APP\_ABI} \CharTok{:=}\StringTok{ armeabi{-}v7a}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{itemize}
+\tightlist
+\item
+  Android.mk
+\end{itemize}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DataTypeTok{LOCAL\_PATH} \CharTok{:=}\StringTok{ }\CharTok{$(}\KeywordTok{call}\StringTok{ my{-}dir}\CharTok{)}
+
+\KeywordTok{include} \CharTok{$(}\DataTypeTok{CLEAR\_VARS}\CharTok{)}
+
+\DataTypeTok{LOCAL\_MODULE} \CharTok{:=}\StringTok{ liblive555}
+\DataTypeTok{LOCAL\_CPPFLAGS} \CharTok{+=}\StringTok{ {-}fexceptions {-}DXLOCALE\_NOT\_USED=1 {-}DNULL=0 {-}DNO\_SSTREAM=1 {-}UIP\_ADD\_SOURCE\_MEMBERSHIP {-}DSOCKLEN\_T=socklen\_t}
+
+\DataTypeTok{LOCAL\_C\_INCLUDES} \CharTok{:=}\StringTok{ }\CharTok{\textbackslash{}}
+\StringTok{    }\CharTok{$(}\DataTypeTok{LOCAL\_PATH}\CharTok{)}\StringTok{ }\CharTok{\textbackslash{}}
+\StringTok{    }\CharTok{$(}\DataTypeTok{LOCAL\_PATH}\CharTok{)}\StringTok{/BasicUsageEnvironment/include }\CharTok{\textbackslash{}}
+\StringTok{    }\CharTok{$(}\DataTypeTok{LOCAL\_PATH}\CharTok{)}\StringTok{/UsageEnvironment/include }\CharTok{\textbackslash{}}
+\StringTok{    }\CharTok{$(}\DataTypeTok{LOCAL\_PATH}\CharTok{)}\StringTok{/groupsock/include }\CharTok{\textbackslash{}}
+\StringTok{    }\CharTok{$(}\DataTypeTok{LOCAL\_PATH}\CharTok{)}\StringTok{/liveMedia/include }\CharTok{\textbackslash{}}
+
+\DataTypeTok{LOCAL\_SRC\_FILES} \CharTok{:=}\StringTok{ }\CharTok{\textbackslash{}}
+\StringTok{    BasicUsageEnvironment/BasicHashTable.cpp         }\CharTok{\textbackslash{}}
+\StringTok{        ...(这里把其他cpp、c文件都列到这里）}
+
+\KeywordTok{include} \CharTok{$(}\DataTypeTok{BUILD\_SHARED\_LIBRARY}\CharTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+然后执行ndk-build进行编译：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{ndk{-}build}\NormalTok{ NDK\_PROJECT\_PATH=. NDK\_APPLICATION\_MK=Application.mk}
+\end{Highlighting}
+\end{Shaded}
+
+编译完成就可以得到libgnustl\_shared.so liblive555.so了。
+
+
+\end{document}

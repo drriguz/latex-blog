@@ -1,0 +1,299 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Rust(1) 基本语法}
+\blogdate{2019-10-22}
+\blogtags{Rust, 编程语言, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+使用rust语言编写hello world再容易不过了：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{fn}\NormalTok{ main() }\OperatorTok{\{}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"Hello world!"}\NormalTok{)}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+然后利用rustc编译器编译即可:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{rustc}\NormalTok{ hell.rs }\AttributeTok{{-}o}\NormalTok{ hello.out }\KeywordTok{\&\&} \ExtensionTok{./hello.out}
+\end{Highlighting}
+\end{Shaded}
+
+\section{可变(mutable)与不可变(immutable)}\label{ux53efux53d8mutableux4e0eux4e0dux53efux53d8immutable}
+
+rust程序默认的变量是不可变的，类似Scala这种函数式编程的语言，鼓励用户使用immutable的变量。当然如果你非想要使用可变的对象也是支持的：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ i }\OperatorTok{=} \DecValTok{32}\OperatorTok{;} \CommentTok{// immutable}
+\KeywordTok{let} \KeywordTok{mut}\NormalTok{ i }\OperatorTok{=} \DecValTok{32}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+编译器会检查是否对不可变对象重新赋值:
+
+\begin{verbatim}
+  |
+4 |     let i = 10;
+  |         -
+  |         |
+  |         first assignment to `i`
+  |         help: make this binding mutable: `mut i`
+...
+7 |     i = 99;
+  |     ^^^^^^ cannot assign twice to immutable variable
+\end{verbatim}
+
+那么，对于简单类型直接赋值会有问题，如果是复杂类型，如何呢？比如我们用一个不可变的字符串，然后去调用它的函数改变值，会发生生么情况呢？
+
+\begin{verbatim}
+--> test.rs:5:5
+  |
+4 |     let s = String::from("hello");
+  |         - help: consider changing this to be mutable: `mut s`
+5 |     s.push_str(" world!!!");
+  |     ^ cannot borrow as mutable
+\end{verbatim}
+
+结果表明，rust依然保持对象是不可变的。看了一下这个方法的定义，有些蹊跷：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{pub} \KeywordTok{fn}\NormalTok{ push\_str(}\OperatorTok{\&}\KeywordTok{mut} \KeywordTok{self}\OperatorTok{,}\NormalTok{ string}\OperatorTok{:} \OperatorTok{\&}\DataTypeTok{str}\NormalTok{) }\OperatorTok{\{}
+    \KeywordTok{self}\OperatorTok{.}\NormalTok{vec}\OperatorTok{.}\NormalTok{extend\_from\_slice(string}\OperatorTok{.}\NormalTok{as\_bytes())}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+具体怎么做到的，我们后面再来研究。
+
+\section{基本类型}\label{ux57faux672cux7c7bux578b}
+
+rust跟大多数编译型语言一样是静态类型(statically typed)的语言，即所有的变量的类型在程序编译的时候就是已知的。在rust语言中，有着如下的基本类型：
+
+\subsection{标量类型(Scalar types)}\label{ux6807ux91cfux7c7bux578bscalar-types}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}lcl@{}}
+\toprule\noalign{}
+类型 & 长度 & \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+bool & 1 & true/ false \\
+char & 4 & 并不等同于Unicode \\
+i8/u8 & 8 & \\
+i16/u16 & 16 & \\
+i32/u32 & 32 & i32是默认类型，通常拥有最快的速度 \\
+i64/u64 & 64 & \\
+i128/u128 & 128 & \\
+isize/usize & arch & 取决于机器架构，在32位机器上位32位，64位上位64位 \\
+f32 & 32 & 浮点数使用IEEE-754标准 \\
+f64 & 64 & \\
+\end{longtable}
+}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ f }\OperatorTok{=} \ConstantTok{true}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ sum}\OperatorTok{:}\DataTypeTok{i32} \OperatorTok{=} \DecValTok{100}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ heart\_eyed\_cat }\OperatorTok{=} \CharTok{\textquotesingle{}😻\textquotesingle{}}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{复合类型(Compound types)}\label{ux590dux5408ux7c7bux578bcompound-types}
+
+复合类型分为元组（Tuple）和数组。元组可以用来将不同类型的解构组合到一起：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ t}\OperatorTok{:}\NormalTok{ (}\DataTypeTok{i32}\OperatorTok{,} \DataTypeTok{bool}\NormalTok{) }\OperatorTok{=}\NormalTok{ (}\DecValTok{100}\OperatorTok{,} \ConstantTok{false}\NormalTok{)}\OperatorTok{;}
+
+\KeywordTok{let}\NormalTok{ (x}\OperatorTok{,}\NormalTok{ y) }\OperatorTok{=}\NormalTok{ t}\OperatorTok{;} \CommentTok{// 解构元组}
+\KeywordTok{let}\NormalTok{ x }\OperatorTok{=}\NormalTok{ t}\OperatorTok{.}\DecValTok{0}\OperatorTok{;}    \CommentTok{// 或者通过序号访问}
+\end{Highlighting}
+\end{Shaded}
+
+数组的与元组的区别在于数组中包含的都是同一种数据类型的值。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ a }\OperatorTok{=}\NormalTok{ [}\DecValTok{1}\OperatorTok{,} \DecValTok{2}\OperatorTok{,} \DecValTok{3}\NormalTok{]}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ a}\OperatorTok{:}\NormalTok{ [}\DataTypeTok{i32}\OperatorTok{;} \DecValTok{5}\NormalTok{] }\OperatorTok{=}\NormalTok{ [}\DecValTok{1}\OperatorTok{,} \DecValTok{2}\OperatorTok{,} \DecValTok{3}\OperatorTok{,} \DecValTok{4}\OperatorTok{,} \DecValTok{5}\NormalTok{]}\OperatorTok{;} \CommentTok{// 显示声明一个数组}
+\KeywordTok{let}\NormalTok{ b }\OperatorTok{=}\NormalTok{ [}\DecValTok{10}\OperatorTok{;} \DecValTok{5}\NormalTok{]}\OperatorTok{;}                   \CommentTok{// 声明初始值为10、长度为5的数组}
+\end{Highlighting}
+\end{Shaded}
+
+值得注意的是，在rust中元组和数组都是固定长度的，一旦声明以后就不可以更改。如果非要可变长度的集合，那么可以考虑使用标准库中的\texttt{vector}。并且数组中的元素也是不可以更改的，如果尝试去更改一个不可变的对象编译时会出错：
+
+\begin{verbatim}
+6 |     let b = [100; 5];
+  |         - help: consider changing this to be mutable: `mut b`
+7 |     b[1] = 1024;
+  |     ^^^^^^^^^^^ cannot assign
+\end{verbatim}
+
+这和一些其他的语言(例如Java中的final)是有区别的。
+
+数组中如果如果声明的长度和和实际值的长度不一样会怎样呢？rust在编译时就会出错：
+
+\begin{verbatim}
+ --> hell.rs:11:23
+   |
+11 |     let a: [i32; 3] = [1];
+   |                       ^^^ expected an array with a fixed size of 3 elements, found one with 1 element
+\end{verbatim}
+
+另外，rust程序会在运行时对数组的边界进行检查，如果越界访问数组将抛出错误而结束程序，而不是返回一个错误的内存。
+
+\section{方法}\label{ux65b9ux6cd5}
+
+在rust中定义一个方法使用\texttt{fn}关键字定义：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{fn}\NormalTok{ foo(i}\OperatorTok{:} \DataTypeTok{i32}\OperatorTok{,}\NormalTok{ j}\OperatorTok{:} \DataTypeTok{i32}\NormalTok{) }\OperatorTok{\{}
+    \KeywordTok{let}\NormalTok{ sum }\OperatorTok{=}\NormalTok{ i }\OperatorTok{+}\NormalTok{ j}
+\OperatorTok{\}}
+
+\CommentTok{// 带有返回值的方法}
+\KeywordTok{fn}\NormalTok{ sum(i}\OperatorTok{:} \DataTypeTok{i32}\OperatorTok{,}\NormalTok{ j}\OperatorTok{:} \DataTypeTok{i32}\NormalTok{) }\OperatorTok{{-}\textgreater{}} \DataTypeTok{i32} \OperatorTok{\{}
+\NormalTok{    i }\OperatorTok{+}\NormalTok{ j}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+在rust中方法是第一类值，意味着你可以这样操作：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ fn\_s  }\OperatorTok{=}\NormalTok{ sum}\OperatorTok{;}
+\KeywordTok{let}\NormalTok{ s }\OperatorTok{=}\NormalTok{ fn\_s(i}\OperatorTok{,}\NormalTok{ j)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+另外，方法中包含在大括号中的语句块，被称作是表达式(expression)，可以这样用：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ a }\OperatorTok{=} \OperatorTok{\{}
+\NormalTok{   e }\OperatorTok{+} \DecValTok{10}
+\OperatorTok{\};}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\}"}\OperatorTok{,}\NormalTok{ a)}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+\section{流程控制}\label{ux6d41ux7a0bux63a7ux5236}
+
+\subsection{if语句}\label{ifux8bedux53e5}
+
+rust的if语句和其他语言基本类似，稍微有一点区别：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ControlFlowTok{if}\NormalTok{ e }\OperatorTok{\%} \DecValTok{2} \OperatorTok{==} \DecValTok{0} \OperatorTok{\{}        \CommentTok{// if条件后面不用写小括号}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\}"}\OperatorTok{,}\NormalTok{ e)}\OperatorTok{;}
+\OperatorTok{\}} \ControlFlowTok{else} \ControlFlowTok{if}\NormalTok{ e }\OperatorTok{\%} \DecValTok{3} \OperatorTok{==} \DecValTok{0} \OperatorTok{\{} \CommentTok{// 但是后面的语句块必须包含在大括号之中，哪怕只有一行}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\} \% 3 ==0"}\OperatorTok{,}\NormalTok{ e)}\OperatorTok{;}
+\OperatorTok{\}} \ControlFlowTok{else} \OperatorTok{\{}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{":p"}\NormalTok{)}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{条件赋值}\label{ux6761ux4ef6ux8d4bux503c}
+
+因为if语句本身是一个表达式，所以可以把if和let联合在一起来使用，也就是条件赋值：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ a }\OperatorTok{=} \ControlFlowTok{if}\NormalTok{ condition }\OperatorTok{\{}
+    \DecValTok{5}
+\OperatorTok{\}} \ControlFlowTok{else} \OperatorTok{\{}
+    \DecValTok{6}
+\OperatorTok{\};}
+\end{Highlighting}
+\end{Shaded}
+
+当然前提是不同的分支下的语句要是一样的类型，否则编译器会检测出错误。
+
+\subsection{循环}\label{ux5faaux73af}
+
+rust的\texttt{loop}关键字支持创建一个循环:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let} \KeywordTok{mut}\NormalTok{ i }\OperatorTok{=} \DecValTok{0}\OperatorTok{;}
+\ControlFlowTok{loop} \OperatorTok{\{}
+\NormalTok{    i }\OperatorTok{+=} \DecValTok{1}\OperatorTok{;}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"{-}\textgreater{}\{\}"}\OperatorTok{,}\NormalTok{ i)}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+基本上这就是一个死循环了。不知道为啥要定义这样一个奇葩的关键字。索性我们可以像其他编程语言一样\texttt{break}。值得注意的是，跟条件赋值一样，loop语句也是可以和let一起来赋值的，像下面这样：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ s }\OperatorTok{=} \ControlFlowTok{loop} \OperatorTok{\{}
+\NormalTok{    i }\OperatorTok{+=} \DecValTok{1}\OperatorTok{;}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"{-}\textgreater{}\{\}"}\OperatorTok{,}\NormalTok{ i)}\OperatorTok{;}
+    \ControlFlowTok{if}\NormalTok{(i }\OperatorTok{\textgreater{}} \DecValTok{100}\NormalTok{) }\OperatorTok{\{}
+        \ControlFlowTok{break}\NormalTok{ i}\OperatorTok{;}
+    \OperatorTok{\}}
+\OperatorTok{\};}
+\PreprocessorTok{println!}\NormalTok{(}\StringTok{"s = \{\}"}\OperatorTok{,}\NormalTok{ s)}\OperatorTok{;} \CommentTok{// s = 101}
+\end{Highlighting}
+\end{Shaded}
+
+除了这个\texttt{loop}外，也可以``正常的''像其他语言一样，使用\texttt{while}和\texttt{for}进行条件循环：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ControlFlowTok{while}\NormalTok{ i }\OperatorTok{\textless{}} \DecValTok{1000} \OperatorTok{\{}    \CommentTok{// 不用写小括号}
+\NormalTok{    i }\OperatorTok{+=} \DecValTok{1}\OperatorTok{;}
+\OperatorTok{\}}
+
+\ControlFlowTok{for}\NormalTok{ e }\KeywordTok{in}\NormalTok{ a}\OperatorTok{.}\NormalTok{iter() }\OperatorTok{\{} \CommentTok{// 使用for循环遍历数组}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\}"}\OperatorTok{,}\NormalTok{ e)}\OperatorTok{;} 
+\OperatorTok{\}}
+
+\CommentTok{// for i in (1..10).rev()}
+\CommentTok{// 使用rev()反转顺序}
+\ControlFlowTok{for}\NormalTok{ i }\KeywordTok{in}\NormalTok{ (}\DecValTok{1}\OperatorTok{..}\DecValTok{10}\NormalTok{) }\OperatorTok{\{}
+    \PreprocessorTok{println!}\NormalTok{(}\StringTok{"\{\}"}\OperatorTok{,}\NormalTok{ i)}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\section{rust语言的一些惯例}\label{rustux8bedux8a00ux7684ux4e00ux4e9bux60efux4f8b}
+
+\subsection{命名方式}\label{ux547dux540dux65b9ux5f0f}
+
+rust中推荐使用蛇形命名(snake case)来作为方法和变量的命名方式，所有的标识符都是小写且使用下划线分隔，例如：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{let}\NormalTok{ foo\_bar }\OperatorTok{=} \DecValTok{1}\OperatorTok{;}
+
+\KeywordTok{fn}\NormalTok{ print\_info() }\OperatorTok{\{}
+
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+
+\end{document}

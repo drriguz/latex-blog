@@ -1,0 +1,175 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{flutter中使用ffi调用SqlCipher}
+\blogdate{2020-11-04}
+\blogtags{Android, Flutter, 移动端, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+目前在flutter中调用sqlite有成熟的插件例如sqflite，而我需要sqlcipher，并同时加载fts5扩展，现有的插件并不能直接支持。因此需要创建一个插件来做这个事情。在以前平台集成相当麻烦，而现在有了ffi之后，可以直接调用原生代码，虽然还在试验阶段但终究是大势所趋。
+
+\section{源码编译}\label{ux6e90ux7801ux7f16ux8bd1}
+
+sqlite源码编译比较简单，但是如果要运行其测试，在mac上还是有些折腾。sqlite3运行测试需要tcl8.6，自带的无法使用（/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Tcl.framework/） 下载\href{https://www.tcl.tk/software/tcltk/download.html}{Tcl8.6}并编译安装：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\BuiltInTok{cd}\NormalTok{ tcl8.6.10/unix}
+\ExtensionTok{./configure}
+\FunctionTok{make}
+\FunctionTok{sudo}\NormalTok{ make install}
+\end{Highlighting}
+\end{Shaded}
+
+然后可以跑sqlite的测试\texttt{make\ test}。
+
+而要编译sqlcipher，也有一些选项需要设置，
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\BuiltInTok{cd}\NormalTok{ sqlcipher/build}
+\ExtensionTok{./configure} \AttributeTok{{-}{-}enable{-}tempstore}\OperatorTok{=}\NormalTok{no }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}with{-}crypto{-}lib}\OperatorTok{=}\NormalTok{none }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}enable{-}fts5} \DataTypeTok{\textbackslash{}}
+\NormalTok{  CFLAGS=}\StringTok{"{-}DSQLCIPHER\_CRYPTO\_OPENSSL {-}DSQLITE\_TEMP\_STORE=3 {-}DSQLITE\_HAS\_CODEC {-}I/usr/local/opt/openssl/include/"} \DataTypeTok{\textbackslash{}}
+\NormalTok{  LDFLAGS=}\StringTok{"/usr/local/opt/openssl/lib/libcrypto.a"}
+\end{Highlighting}
+\end{Shaded}
+
+\section{在flutter中集成}\label{ux5728flutterux4e2dux96c6ux6210}
+
+\subsection{创建插件}\label{ux521bux5efaux63d2ux4ef6}
+
+首先需要创建一个插件：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{flutter}\NormalTok{ create }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}platforms}\OperatorTok{=}\NormalTok{android,ios }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}org}\OperatorTok{=}\NormalTok{com.riguz }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}template}\OperatorTok{=}\NormalTok{plugin }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}i}\NormalTok{ swift }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}a}\NormalTok{ java }\DataTypeTok{\textbackslash{}}
+\NormalTok{  native\_sqlcipher}
+\end{Highlighting}
+\end{Shaded}
+
+flutter升级之后，必须指定\texttt{-\/-platforms=android,ios}才会生成ios和android的响应工程。
+
+\subsection{平台集成}\label{ux5e73ux53f0ux96c6ux6210}
+
+\subsubsection{生成整合的代码}\label{ux751fux6210ux6574ux5408ux7684ux4ee3ux7801}
+
+最直接的方式是将sqlcipher（其中已经包含了sqlite的代码）整合到一个文件中（称之为``amalgamation''版本，运行速度会更快一些）
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{git}\NormalTok{ clone https://github.com/sqlcipher/sqlcipher.git}
+\BuiltInTok{cd}\NormalTok{ sqlcipher}
+\FunctionTok{mkdir}\NormalTok{ build}
+\ExtensionTok{../configure} \AttributeTok{{-}{-}with{-}crypto{-}lib}\OperatorTok{=}\NormalTok{none }\AttributeTok{{-}{-}enable{-}fts5}
+\FunctionTok{make}\NormalTok{ sqlite3.c}
+\end{Highlighting}
+\end{Shaded}
+
+生成完之后，会得到一个sqlite3.c和sqlite3.h。如果希望在mac上也编译出来，可以
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{./configure} \AttributeTok{{-}{-}enable{-}tempstore}\OperatorTok{=}\NormalTok{no }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}with{-}crypto{-}lib}\OperatorTok{=}\NormalTok{none }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}enable{-}fts5} \DataTypeTok{\textbackslash{}}
+\NormalTok{  CFLAGS=}\StringTok{"{-}DSQLCIPHER\_CRYPTO\_OPENSSL {-}DSQLITE\_TEMP\_STORE=3 {-}DSQLITE\_HAS\_CODEC {-}I/usr/local/opt/openssl/include/"} \DataTypeTok{\textbackslash{}}
+\NormalTok{  LDFLAGS=}\StringTok{"/usr/local/opt/openssl/lib/libcrypto.a"}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{ios集成}\label{iosux96c6ux6210}
+
+将sqlite3.c和sqlite3.h代码拷贝到插件的ios/Classes目录中，然后需要修改插件的podspec文件（单纯在xcode里面修改无法保存，每次pod install之后就会丢失），需要将一些参数加进去：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\DataTypeTok{Pod}\OperatorTok{::}\DataTypeTok{Spec}\AttributeTok{.new} \ControlFlowTok{do} \OperatorTok{|}\NormalTok{s}\OperatorTok{|}
+\NormalTok{  s}\AttributeTok{.name}             \OperatorTok{=} \VerbatimStringTok{\textquotesingle{}native\_sqlcipher\textquotesingle{}}
+  \CommentTok{\# ...}
+
+  \CommentTok{\# 尽管之前configure的时候已经指定了SQLITE\_ENABLE\_FTS5，但是这里还需要再设置一次才能将fts5扩展编译进去}
+\NormalTok{  s}\AttributeTok{.frameworks} \OperatorTok{=} \VerbatimStringTok{\textquotesingle{}Security\textquotesingle{}}
+\NormalTok{  s}\AttributeTok{.xcconfig} \OperatorTok{=} \OperatorTok{\{} \VerbatimStringTok{\textquotesingle{}OTHER\_CFLAGS\textquotesingle{}} \OperatorTok{=\textgreater{}} \VerbatimStringTok{\textquotesingle{}{-}DSQLITE\_ENABLE\_FTS5 {-}DSQLITE\_HAS\_CODEC {-}DSQLITE\_TEMP\_STORE=3 {-}DSQLCIPHER\_CRYPTO\_CC {-}DNDEBUG\textquotesingle{}} \OperatorTok{\}}
+  \CommentTok{\# ...}
+\ControlFlowTok{end}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{安卓集成}\label{ux5b89ux5353ux96c6ux6210}
+
+\subsubsection{编译OpenSSL}\label{ux7f16ux8bd1openssl}
+
+下载openssl，当前最新为1.1.1h。其编译说明可以参照NOTES.ANDROID文档。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\BuiltInTok{export} \VariableTok{ANDROID\_NDK\_HOME}\OperatorTok{=}\NormalTok{/Users/hfli/Library/Android/sdk/ndk/21.3.6528147}
+    \VariableTok{PATH}\OperatorTok{=}\VariableTok{$ANDROID\_NDK\_HOME}\NormalTok{/toolchains/llvm/prebuilt/darwin{-}x86\_64/bin:}\VariableTok{$ANDROID\_NDK\_HOME}\NormalTok{/toolchains/arm{-}linux{-}androideabi{-}4.9/prebuilt/darwin{-}x86\_64/bin:}\VariableTok{$PATH}
+  \ExtensionTok{./Configure}\NormalTok{ android{-}arm64 }\AttributeTok{{-}D\_\_ANDROID\_API\_\_}\OperatorTok{=}\NormalTok{29}
+    \FunctionTok{make}
+\end{Highlighting}
+\end{Shaded}
+
+对于其他平台需要重新configure然后编译：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\#./Configure android{-}arm {-}D\_\_ANDROID\_API\_\_=29}
+\CommentTok{\#./Configure android{-}arm64 {-}D\_\_ANDROID\_API\_\_=29}
+\CommentTok{\#./Configure android{-}x86 {-}D\_\_ANDROID\_API\_\_=29}
+\ExtensionTok{./Configure}\NormalTok{ android{-}x86\_64 }\AttributeTok{{-}D\_\_ANDROID\_API\_\_}\OperatorTok{=}\NormalTok{29}
+\FunctionTok{make}\NormalTok{ clean}
+\FunctionTok{make}
+\end{Highlighting}
+\end{Shaded}
+
+默认生成的so是带有后缀的，（类似*.so.1.1)，因为安卓打包的时候不支持，解决办法是在make的时候覆盖掉参数：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{make}\NormalTok{ SHLIB\_VERSION\_NUMBER= SHLIB\_EXT=.so}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{集成sqlcipher}\label{ux96c6ux6210sqlcipher}
+
+\subsection{调用}\label{ux8c03ux7528}
+
+参见\href{https://flutter.dev/docs/development/platform-integration/c-interop}{Binding to native code using dart:ffi}。
+
+\section{兼容性}\label{ux517cux5bb9ux6027}
+
+SqlCipher依赖一个非标准的选项，但是这个选项\href{https://discuss.zetetic.net/t/removal-of-sqlite-has-codec-compile-time-option-from-public-sqlite-code/4262}{最近已经被移除}了，SqlCipher目前包含的sqlite的版本为3.31.0，而sqlite最新为3.33.0。目前尚不知道后续的支持计划。
+
+参考：
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://github.com/petasis/tkdnd/issues/16}{configure: error: Can't find Tcl configuration definitions MacOS}
+\item
+  \href{https://www.zetetic.net/sqlcipher/ios-tutorial/}{Adding SQLCipher to Xcode Projects}
+\item
+  \href{https://github.com/dart-lang/sdk/blob/master/samples/ffi/sqlite/}{Dart ffi sqlite example}
+\item
+  \href{https://github.com/sqlcipher/sqlcipher/issues/132\#issuecomment-122912569}{error: Library crypto not found. Install openssl!}
+\item
+  \href{https://github.com/openssl/openssl/issues/3902}{shared library without version suffix for android (feature request)}
+\end{itemize}
+
+
+\end{document}

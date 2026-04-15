@@ -1,0 +1,253 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Kubernetes集群安装纪要}
+\blogdate{2023-02-15}
+\blogtags{云计算, 容器化}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+以前基本上是在本地开发， 因此使用minikube之类的轻量级kubernetes环境十分方便。 但现在需要在真实的服务器上部署， 因此有机会体验一番， 实际感受是------比想象的要简单！
+
+\section{环境准备}\label{ux73afux5883ux51c6ux5907}
+
+\subsection{系统要求}\label{ux7cfbux7edfux8981ux6c42}
+
+本次安装以Ubuntu 22.04.2为基础， 在分区时，特意给\texttt{/var}分区预留了较大的空间， 因为考虑到docker容器运行会需要缓存较多镜像之类。
+
+Kubernetes集群安装要求机器关闭\texttt{/swap}分区， 由于本次安装系统时直接未启用swap， 因此不需要额外处理。若系统启用了swap分区， 需要进行禁用方可安装。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ swapoff  }\AttributeTok{{-}a}
+\FunctionTok{sudo}\NormalTok{ vim /etc/fstab }\CommentTok{\# 注释掉swap相关的行}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{配置系统参数}\label{ux914dux7f6eux7cfbux7edfux53c2ux6570}
+
+系统参数需要进行一些必要的配置：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{cat} \OperatorTok{\textless{}\textless{}EOF} \KeywordTok{|} \FunctionTok{sudo}\NormalTok{ tee /etc/modules{-}load.d/k8s.conf}
+\StringTok{overlay}
+\StringTok{br\_netfilter}
+\OperatorTok{EOF}
+
+\FunctionTok{sudo}\NormalTok{ modprobe overlay}
+\FunctionTok{sudo}\NormalTok{ modprobe br\_netfilter}
+
+\FunctionTok{cat} \OperatorTok{\textless{}\textless{}EOF} \KeywordTok{|} \FunctionTok{sudo}\NormalTok{ tee /etc/sysctl.d/k8s.conf}
+\StringTok{net.bridge.bridge{-}nf{-}call{-}iptables  = 1}
+\StringTok{net.bridge.bridge{-}nf{-}call{-}ip6tables = 1}
+\StringTok{net.ipv4.ip\_forward                 = 1}
+\OperatorTok{EOF}
+
+\FunctionTok{sudo}\NormalTok{ sysctl }\AttributeTok{{-}{-}system}
+\end{Highlighting}
+\end{Shaded}
+
+其中，由于 修改完成后，确保其生效：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{lsmod} \KeywordTok{|} \FunctionTok{grep}\NormalTok{ br\_netfilter}
+\FunctionTok{lsmod} \KeywordTok{|} \FunctionTok{grep}\NormalTok{ overlay}
+\ExtensionTok{sysctl}\NormalTok{ net.bridge.bridge{-}nf{-}call{-}iptables net.bridge.bridge{-}nf{-}call{-}ip6tables net.ipv4.ip\_forward}
+\end{Highlighting}
+\end{Shaded}
+
+正常情况下看到的应该类似下面这样的结果：
+
+\begin{verbatim}
+$ lsmod | grep br_netfilter
+br_netfilter           32768  0
+bridge                307200  1 br_netfilter
+$ lsmod | grep overlay
+overlay               151552  0
+$ sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+\end{verbatim}
+
+\subsection{安装containerd}\label{ux5b89ux88c5containerd}
+
+在准备安装为Kubernetes的节点上各自执行以下命令， 安装containerd作为容器运行时：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ apt{-}get install }\DataTypeTok{\textbackslash{}}
+\NormalTok{    ca{-}certificates }\DataTypeTok{\textbackslash{}}
+\NormalTok{    curl }\DataTypeTok{\textbackslash{}}
+\NormalTok{    gnupg }\DataTypeTok{\textbackslash{}}
+\NormalTok{    lsb{-}release}
+\FunctionTok{sudo}\NormalTok{ mkdir }\AttributeTok{{-}m}\NormalTok{ 0755 }\AttributeTok{{-}p}\NormalTok{ /etc/apt/keyrings}
+\ExtensionTok{curl} \AttributeTok{{-}fsSL}\NormalTok{ https://download.docker.com/linux/ubuntu/gpg }\KeywordTok{|} \FunctionTok{sudo}\NormalTok{ gpg }\AttributeTok{{-}{-}dearmor} \AttributeTok{{-}o}\NormalTok{ /etc/apt/keyrings/docker.gpg}
+
+\BuiltInTok{echo} \DataTypeTok{\textbackslash{}}
+  \StringTok{"deb [arch=}\VariableTok{$(}\ExtensionTok{dpkg} \AttributeTok{{-}{-}print{-}architecture}\VariableTok{)}\StringTok{ signed{-}by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu }\DataTypeTok{\textbackslash{}}
+\StringTok{  }\VariableTok{$(}\ExtensionTok{lsb\_release} \AttributeTok{{-}cs}\VariableTok{)}\StringTok{ stable"} \KeywordTok{|} \FunctionTok{sudo}\NormalTok{ tee /etc/apt/sources.list.d/docker.list }\OperatorTok{\textgreater{}}\NormalTok{ /dev/null}
+
+\FunctionTok{sudo}\NormalTok{ apt{-}get update}
+\FunctionTok{sudo}\NormalTok{ apt{-}get install docker{-}ce docker{-}ce{-}cli containerd.io docker{-}buildx{-}plugin docker{-}compose{-}plugin}
+
+\FunctionTok{sudo}\NormalTok{ usermod }\AttributeTok{{-}aG}\NormalTok{ docker }\VariableTok{$USER}
+\FunctionTok{sudo}\NormalTok{ systemctl enable docker.service}
+\FunctionTok{sudo}\NormalTok{ systemctl enable containerd.service}
+\end{Highlighting}
+\end{Shaded}
+
+安装完成后，需要修改containerd配置文件（/etc/containerd/config.toml），使用systemd初始化一个默认配置文件并修改：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ containerd config default }\KeywordTok{|} \FunctionTok{sudo}\NormalTok{ tee /etc/containerd/config.toml}
+\end{Highlighting}
+\end{Shaded}
+
+由于gcr镜像在国内无法下载，需要修改其中的一个镜像， 这里使用DockerHub上的镜像， 同时，需要修改\texttt{SystemdCgroup}为\texttt{true}：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{[plugins."}\DataTypeTok{io.containerd.grpc.v1.cri"}\KeywordTok{.containerd.runtimes.runc]}
+  \DataTypeTok{...}
+  \KeywordTok{[plugins."}\DataTypeTok{io.containerd.grpc.v1.cri"}\KeywordTok{.containerd.runtimes.runc.options]}
+    \DataTypeTok{SystemdCgroup} \OperatorTok{=} \ConstantTok{true}
+
+\DataTypeTok{sandbox\_image} \OperatorTok{=} \StringTok{"registry.aliyuncs.com/google\_containers/pause:3.6"}
+\end{Highlighting}
+\end{Shaded}
+
+修改后，重启containerd：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ systemctl restart containerd}
+\end{Highlighting}
+\end{Shaded}
+
+\section{使用kubeadm安装Kubernetes}\label{ux4f7fux7528kubeadmux5b89ux88c5kubernetes}
+
+\subsection{安装kubeadm}\label{ux5b89ux88c5kubeadm}
+
+在各个节点上均执行以下命令安装：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ apt{-}get install }\AttributeTok{{-}y}\NormalTok{ apt{-}transport{-}https ca{-}certificates curl}
+
+\ExtensionTok{curl}\NormalTok{ https://mirrors.aliyun.com/kubernetes/apt/doc/apt{-}key.gpg }\KeywordTok{|} \FunctionTok{sudo}\NormalTok{ apt{-}key add }\AttributeTok{{-}}
+
+\FunctionTok{sudo}\NormalTok{ echo }\StringTok{"deb https://mirrors.aliyun.com/kubernetes/apt/ kubernetes{-}xenial main"} \KeywordTok{|} \FunctionTok{sudo}\NormalTok{ tee /etc/apt/sources.list.d/kubernetes.list}
+
+\FunctionTok{sudo}\NormalTok{ apt update}
+\FunctionTok{sudo}\NormalTok{ apt{-}get install }\AttributeTok{{-}y}\NormalTok{ kubelet=1.25.6{-}00 kubeadm=1.25.6{-}00 kubectl=1.25.6{-}00}
+\FunctionTok{sudo}\NormalTok{ apt{-}mark hold kubelet kubeadm kubectl}
+\end{Highlighting}
+\end{Shaded}
+
+其中，指定了使用kubectl 1.25.6版本并通过\texttt{apt-mark}固定住版本， 是因为kubelet这些工具版本默认会使用最新的， 这里固定是项目所要求的。
+
+\subsection{创建Kubernetes集群}\label{ux521bux5efakubernetesux96c6ux7fa4}
+
+在master节点上执行以下命令：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ systemctl start kubelet}
+\FunctionTok{sudo}\NormalTok{ systemctl enable kubelet}
+
+\VariableTok{MASTER\_IP}\OperatorTok{=}\StringTok{"xx.xx.xx.xx"}
+\VariableTok{NODENAME}\OperatorTok{=}\VariableTok{$(}\FunctionTok{hostname} \AttributeTok{{-}s}\VariableTok{)}
+\VariableTok{POD\_CIDR}\OperatorTok{=}\StringTok{"192.168.0.0/16"}
+\VariableTok{KUBERNETES\_VERSION}\OperatorTok{=}\StringTok{"v1.25.6"}
+
+\FunctionTok{sudo}\NormalTok{ kubeadm init }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}image{-}repository}\OperatorTok{=}\NormalTok{registry.aliyuncs.com/google\_containers }\DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}pod{-}network{-}cidr}\OperatorTok{=}\VariableTok{$POD\_CIDR} \DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}kubernetes{-}version} \VariableTok{$KUBERNETES\_VERSION} \DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}apiserver{-}advertise{-}address} \VariableTok{$MASTER\_IP} \DataTypeTok{\textbackslash{}}
+  \AttributeTok{{-}{-}node{-}name} \VariableTok{$NODENAME}
+\end{Highlighting}
+\end{Shaded}
+
+其中\texttt{MASTER\_IP}为其IP地址，该地址似乎不支持域名的方式。 注意必须要确保docker、kubelet服务已经启动。 否则，很可能会安装失败， 如果安装失败， 则可以删除之后， 重新开始：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ kubeadm reset}
+\FunctionTok{sudo}\NormalTok{ rm }\AttributeTok{{-}rf}\NormalTok{ \textasciitilde{}/.kube}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{生成Config}\label{ux751fux6210config}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{mkdir} \AttributeTok{{-}p} \VariableTok{$HOME}\NormalTok{/.kube}
+\FunctionTok{sudo}\NormalTok{ cp }\AttributeTok{{-}i}\NormalTok{ /etc/kubernetes/admin.conf }\VariableTok{$HOME}\NormalTok{/.kube/config}
+\FunctionTok{sudo}\NormalTok{ chown }\VariableTok{$(}\FunctionTok{id} \AttributeTok{{-}u}\VariableTok{)}\NormalTok{:}\VariableTok{$(}\FunctionTok{id} \AttributeTok{{-}g}\VariableTok{)} \VariableTok{$HOME}\NormalTok{/.kube/config}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{部署CNI插件}\label{ux90e8ux7f72cniux63d2ux4ef6}
+
+部署Calico CNI插件：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{kubectl}\NormalTok{ create }\AttributeTok{{-}f}\NormalTok{ https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/tigera{-}operator.yaml}
+\ExtensionTok{kubectl}\NormalTok{ create }\AttributeTok{{-}f}\NormalTok{ https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom{-}resources.yaml}
+\end{Highlighting}
+\end{Shaded}
+
+注意这里需要用\texttt{create}而不是\texttt{apply}， 因其大小较大，apply方式限制\texttt{Too\ long:\ must\ have\ at\ most\ 262144\ byte}。 安装后，等待其创建完成：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{watch}\NormalTok{ kubectl get pods }\AttributeTok{{-}n}\NormalTok{ calico{-}system}
+\end{Highlighting}
+\end{Shaded}
+
+完成后，移除master节点上的污点：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{kubectl}\NormalTok{ taint nodes }\AttributeTok{{-}{-}all}\NormalTok{ node{-}role.kubernetes.io/control{-}plane{-}}
+\ExtensionTok{kubectl}\NormalTok{ taint nodes }\AttributeTok{{-}{-}all}\NormalTok{ node{-}role.kubernetes.io/master{-}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{添加worker节点}\label{ux6dfbux52a0workerux8282ux70b9}
+
+在各个其他节点上执行：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ systemctl start kubelet}
+\FunctionTok{sudo}\NormalTok{ systemctl enable kubelet}
+\end{Highlighting}
+\end{Shaded}
+
+使用master节点的输出的命令来加入到集群中， 例如：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{sudo}\NormalTok{ kubeadm join xx.xx.xx.xx:6443 }\AttributeTok{{-}{-}token}\NormalTok{ xnc87j.ia5dfxv418kxo6io }\DataTypeTok{\textbackslash{}}
+        \AttributeTok{{-}{-}discovery{-}token{-}ca{-}cert{-}hash}\NormalTok{ sha256:ea1f579ffc8023522f571ac6bba52e05b5997c359e1b244d827932d56fee57cd }\DataTypeTok{\textbackslash{}}
+        \AttributeTok{{-}{-}node{-}name}\OperatorTok{=}\NormalTok{k8s{-}worker}
+\end{Highlighting}
+\end{Shaded}
+
+其中，可以通过\texttt{-\/-node-name=k8s-worker}参数指定节点名称。 至此，安装完成。
+
+
+\end{document}

@@ -1,0 +1,225 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{使用Spring Cloud Contract进行契约测试}
+\blogdate{2017-08-10}
+\blogtags{框架, Spring, 闲话编程, 微服务}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+研究了一下契约测试，这个概念听着很高端，其实解决的是一个很古老的问题：系统间的接口定义。以前我们做系统同其他系统对接的时候需要定义接口，需要去设计，去确认；尤其是当下微服务比较盛行的时候，我们自己的系统之间也增加了接口，伴随着敏捷开发的流程，很多时候接口在一开始根本都不会去设计，想到哪改到哪\ldots..于是就出现了所谓的契约测试的东西。
+
+先来说说契约测试解决的问题吧：
+
+\begin{itemize}
+\tightlist
+\item
+  consumer在依赖的provider接口没有实现的时候可以用stub模拟
+\item
+  provider可以测试自身的接口是否满足接口定义
+\item
+  consumer和provider都以契约为准，但接口有变动时修改契约，否则测试通不过\ldots\textasciitilde{}
+\item
+  可以对边界进行测试
+\end{itemize}
+
+大概就是这样吧，我觉得前两条是最重要的Feature，举个例子，比如我们有一个Vehicle的服务，用来根据vin(车辆底盘号）来获取车辆的信息；一个Costomer的服务需要调用这个服务来获取客户的车辆信息。我们的Vehicle接口如下：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\AttributeTok{@GetMapping}\OperatorTok{(}\StringTok{"/vehicle/\{vin\}"}\OperatorTok{)}
+\NormalTok{VehicleDetail }\FunctionTok{getVehicleDetail}\OperatorTok{(}\AttributeTok{@PathVariable} \BuiltInTok{String}\NormalTok{ vin}\OperatorTok{)\{}
+\NormalTok{   VehicleDetail item }\OperatorTok{=} \KeywordTok{this}\OperatorTok{.}\FunctionTok{vehicleService}\OperatorTok{.}\FunctionTok{getVehicle}\OperatorTok{(}\NormalTok{vin}\OperatorTok{);}
+   \ControlFlowTok{if}\OperatorTok{(}\NormalTok{item }\OperatorTok{==} \KeywordTok{null}\OperatorTok{)}
+       \ControlFlowTok{throw} \KeywordTok{new} \FunctionTok{VehicleNotFoundException}\OperatorTok{();}
+   \ControlFlowTok{return}\NormalTok{ item}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+我们在Vehicle服务中定义一个契约：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{Contract}\OperatorTok{.}\FunctionTok{make} \OperatorTok{\{}
+\NormalTok{    request }\OperatorTok{\{}
+\NormalTok{        method }\StringTok{\textquotesingle{}GET\textquotesingle{}}
+\NormalTok{        url }\FunctionTok{value}\OperatorTok{(}\StringTok{\textquotesingle{}/vehicle/WDC1660631A7506890\textquotesingle{}}\OperatorTok{)}
+    \OperatorTok{\}}
+\NormalTok{    response }\OperatorTok{\{}
+\NormalTok{        status }\DecValTok{200}
+        \FunctionTok{body}\OperatorTok{([}
+\NormalTok{                vin           }\OperatorTok{:} \StringTok{\textquotesingle{}WDC1660631A7506890\textquotesingle{}}\OperatorTok{,}
+\NormalTok{                brand         }\OperatorTok{:} \StringTok{\textquotesingle{}Audi X5\textquotesingle{}}\OperatorTok{,}
+\NormalTok{                owner         }\OperatorTok{:} \StringTok{\textquotesingle{}James 王\textquotesingle{}}\OperatorTok{,}
+\NormalTok{                registeredDate}\OperatorTok{:} \DecValTok{1502347667000}\OperatorTok{,}
+\NormalTok{                mileage       }\OperatorTok{:} \DecValTok{1200}
+        \OperatorTok{])}
+\NormalTok{        headers }\OperatorTok{\{}
+            \FunctionTok{header}\OperatorTok{(}\StringTok{\textquotesingle{}Content{-}Type\textquotesingle{}}\OperatorTok{:} \FunctionTok{value}\OperatorTok{(}
+                    \FunctionTok{producer}\OperatorTok{(}\FunctionTok{regex}\OperatorTok{(}\StringTok{\textquotesingle{}application/json.*\textquotesingle{}}\OperatorTok{)),}
+                    \FunctionTok{consumer}\OperatorTok{(}\StringTok{\textquotesingle{}application/json\textquotesingle{}}\OperatorTok{)}
+            \OperatorTok{))}
+        \OperatorTok{\}}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+这样我们在执行gradle的\texttt{generateContractTests}任务的时候会自动生成一个契约测试，我们在测试Vehicle服务的时候，只需要Mock我们的Service，返回对应的模拟信息：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\AttributeTok{@Before}
+\KeywordTok{public} \DataTypeTok{void} \FunctionTok{setUp}\OperatorTok{()} \KeywordTok{throws} \BuiltInTok{Exception} \OperatorTok{\{}
+\NormalTok{    VehicleDetail i }\OperatorTok{=} \KeywordTok{new} \FunctionTok{VehicleDetail}\OperatorTok{();}
+\NormalTok{    i}\OperatorTok{.}\FunctionTok{setVin}\OperatorTok{(}\StringTok{"WDC1660631A7506890"}\OperatorTok{);}
+\NormalTok{    i}\OperatorTok{.}\FunctionTok{setOwner}\OperatorTok{(}\StringTok{"James 王"}\OperatorTok{);}
+\NormalTok{    i}\OperatorTok{.}\FunctionTok{setBrand}\OperatorTok{(}\StringTok{"Audi X5"}\OperatorTok{);}
+\NormalTok{    i}\OperatorTok{.}\FunctionTok{setRegisteredDate}\OperatorTok{(}\KeywordTok{new} \BuiltInTok{Date}\OperatorTok{(}\DecValTok{1502347667000L}\OperatorTok{));}
+\NormalTok{    i}\OperatorTok{.}\FunctionTok{setMileage}\OperatorTok{(}\DecValTok{1200}\OperatorTok{);}
+\NormalTok{    RestAssuredMockMvc}\OperatorTok{.}\FunctionTok{webAppContextSetup}\OperatorTok{(}\NormalTok{context}\OperatorTok{);}
+
+    \FunctionTok{given}\OperatorTok{(}\NormalTok{vehicleService}\OperatorTok{.}\FunctionTok{getVehicle}\OperatorTok{(}\StringTok{"WDC1660631A7506890"}\OperatorTok{)).}\FunctionTok{willReturn}\OperatorTok{(}\NormalTok{i}\OperatorTok{);}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+刚刚的契约是一个很固定的数据，我们还可以加上正则表达式的检测：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{Contract}\OperatorTok{.}\FunctionTok{make} \OperatorTok{\{}
+\NormalTok{    request }\OperatorTok{\{}
+\NormalTok{        method }\StringTok{\textquotesingle{}GET\textquotesingle{}}
+\NormalTok{        url }\FunctionTok{value}\OperatorTok{(}\FunctionTok{consumer}\OperatorTok{(}\FunctionTok{regex}\OperatorTok{(}\StringTok{\textquotesingle{}/vehicle/[A{-}Z0{-}9]\{18\}\textquotesingle{}}\OperatorTok{)),}
+                \FunctionTok{producer}\OperatorTok{(}\StringTok{\textquotesingle{}/vehicle/WDC1660631A7506890\textquotesingle{}}\OperatorTok{))}
+    \OperatorTok{\}}
+\NormalTok{    response }\OperatorTok{\{}
+\NormalTok{        status }\DecValTok{200}
+        \FunctionTok{body}\OperatorTok{([}
+\NormalTok{                vin           }\OperatorTok{:}\NormalTok{ $}\OperatorTok{(}\FunctionTok{producer}\OperatorTok{(}\FunctionTok{regex}\OperatorTok{(}\StringTok{/[A{-}Z0{-}9]\{18\}/}\OperatorTok{))),}
+\NormalTok{                brand         }\OperatorTok{:}\NormalTok{ $}\OperatorTok{(}\FunctionTok{producer}\OperatorTok{(}\FunctionTok{anyNonBlankString}\OperatorTok{())),}
+\NormalTok{                owner         }\OperatorTok{:}\NormalTok{ $}\OperatorTok{(}\FunctionTok{producer}\OperatorTok{(}\FunctionTok{anyNonBlankString}\OperatorTok{())),}
+\NormalTok{                registeredDate}\OperatorTok{:}\NormalTok{ $}\OperatorTok{(}\FunctionTok{producer}\OperatorTok{(}\FunctionTok{regex}\OperatorTok{(}\StringTok{/[1{-}9][0{-}9]\{11,12\}/}\OperatorTok{))),}
+\NormalTok{                mileage       }\OperatorTok{:}\NormalTok{ $}\OperatorTok{(}\FunctionTok{producer}\OperatorTok{(}\FunctionTok{regex}\OperatorTok{(}\StringTok{/[1{-}9][0{-}9]\{0,10\}/}\OperatorTok{)))}
+        \OperatorTok{])}
+\NormalTok{        headers }\OperatorTok{\{}
+            \FunctionTok{header}\OperatorTok{(}\StringTok{\textquotesingle{}Content{-}Type\textquotesingle{}}\OperatorTok{:} \FunctionTok{value}\OperatorTok{(}
+                    \FunctionTok{producer}\OperatorTok{(}\FunctionTok{regex}\OperatorTok{(}\StringTok{\textquotesingle{}application/json.*\textquotesingle{}}\OperatorTok{)),}
+                    \FunctionTok{consumer}\OperatorTok{(}\StringTok{\textquotesingle{}application/json\textquotesingle{}}\OperatorTok{)}
+            \OperatorTok{))}
+        \OperatorTok{\}}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+以及异常情况下的测试：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{Contract}\OperatorTok{.}\FunctionTok{make} \OperatorTok{\{}
+\NormalTok{    request }\OperatorTok{\{}
+\NormalTok{        method }\StringTok{\textquotesingle{}GET\textquotesingle{}}
+\NormalTok{        url }\FunctionTok{value}\OperatorTok{(}\FunctionTok{consumer}\OperatorTok{(}\FunctionTok{regex}\OperatorTok{(}\StringTok{\textquotesingle{}/vehicle/}\SpecialCharTok{\textbackslash{}\textbackslash{}}\StringTok{w.+\textquotesingle{}}\OperatorTok{)),}
+                \FunctionTok{producer}\OperatorTok{(}\StringTok{\textquotesingle{}/vehicle/XXXXX\textquotesingle{}}\OperatorTok{))}
+    \OperatorTok{\}}
+\NormalTok{    response }\OperatorTok{\{}
+\NormalTok{        status }\DecValTok{404}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+这样每一个groovy文件都会对应着生成一个测试，达到我们测试Provider的目的。那么，对于客户端来说，怎么测试呢？很简单，我们执行gradle的\texttt{install}命令，会把生成的stub包放到本地的gradle源中，我们在客户端测试的时候可以这么写：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\AttributeTok{@RunWith}\OperatorTok{(}\NormalTok{SpringRunner}\OperatorTok{.}\FunctionTok{class}\OperatorTok{)}
+\AttributeTok{@SpringBootTest}
+\AttributeTok{@AutoConfigureStubRunner}\OperatorTok{(}\NormalTok{ids }\OperatorTok{=} \StringTok{"com.riguz:foo:+:stubs:10000"}\OperatorTok{,}\NormalTok{ workOffline }\OperatorTok{=} \KeywordTok{true}\OperatorTok{)}
+\KeywordTok{public} \KeywordTok{class}\NormalTok{ CustomerServiceTest }\OperatorTok{\{}
+
+    \AttributeTok{@Autowired}
+    \KeywordTok{private}\NormalTok{ CustomerService customerService}\OperatorTok{;}
+
+    \AttributeTok{@Test}
+    \KeywordTok{public} \DataTypeTok{void} \FunctionTok{shouldReturnCustomerDetail}\OperatorTok{()\{}
+\NormalTok{        CustomerInfo info }\OperatorTok{=} \KeywordTok{this}\OperatorTok{.}\FunctionTok{customerService}\OperatorTok{.}\FunctionTok{getCustomerInfo}\OperatorTok{(}\StringTok{"123"}\OperatorTok{);}
+        \BuiltInTok{System}\OperatorTok{.}\FunctionTok{out}\OperatorTok{.}\FunctionTok{println}\OperatorTok{(}\NormalTok{info}\OperatorTok{);}
+        \FunctionTok{assertEquals}\OperatorTok{(}\DecValTok{1}\OperatorTok{,}\NormalTok{ info}\OperatorTok{.}\FunctionTok{getVehicles}\OperatorTok{().}\FunctionTok{size}\OperatorTok{());}
+        \CommentTok{// ...}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+对应着\texttt{\textasciitilde{}/.m2/repository/com/riguz/foo/1.0-SNAPSHOT/foo-1.0-SNAPSHOT-stubs.jar}，\texttt{+}表示取最新版本，\texttt{10000}是端口号，也就是模拟出了一个远程的服务端。这样如果契约有修改的话，取到新的契约stubs包也会跟着修改了。
+
+另外，如果单纯的想模拟一个服务端怎么办？有办法，我们在provider中执行gradle的\texttt{generateClientStubs}命令后，会生成一个mappings目录，在\texttt{build/stubs/....}下面。里面有一些json文件，例如我们的：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{\{}
+  \DataTypeTok{"id"} \FunctionTok{:} \StringTok{"5dd47b81{-}a184{-}4b9e{-}be02{-}b6e22c409c81"}\FunctionTok{,}
+  \DataTypeTok{"request"} \FunctionTok{:} \FunctionTok{\{}
+    \DataTypeTok{"url"} \FunctionTok{:} \StringTok{"/vehicle/WDC1660631A7506890"}\FunctionTok{,}
+    \DataTypeTok{"method"} \FunctionTok{:} \StringTok{"GET"}
+  \FunctionTok{\},}
+  \DataTypeTok{"response"} \FunctionTok{:} \FunctionTok{\{}
+    \DataTypeTok{"status"} \FunctionTok{:} \DecValTok{200}\FunctionTok{,}
+    \DataTypeTok{"body"} \FunctionTok{:} \StringTok{"\{}\CharTok{\textbackslash{}"}\StringTok{vin}\CharTok{\textbackslash{}"}\StringTok{:}\CharTok{\textbackslash{}"}\StringTok{WDC1660631A7506890}\CharTok{\textbackslash{}"}\StringTok{,}\CharTok{\textbackslash{}"}\StringTok{brand}\CharTok{\textbackslash{}"}\StringTok{:}\CharTok{\textbackslash{}"}\StringTok{Audi X5}\CharTok{\textbackslash{}"}\StringTok{,}\CharTok{\textbackslash{}"}\StringTok{owner}\CharTok{\textbackslash{}"}\StringTok{:}\CharTok{\textbackslash{}"}\StringTok{James }\CharTok{\textbackslash{}\textbackslash{}}\StringTok{u738b}\CharTok{\textbackslash{}"}\StringTok{,}\CharTok{\textbackslash{}"}\StringTok{registeredDate}\CharTok{\textbackslash{}"}\StringTok{:1502347667000,}\CharTok{\textbackslash{}"}\StringTok{mileage}\CharTok{\textbackslash{}"}\StringTok{:1200\}"}\FunctionTok{,}
+    \DataTypeTok{"headers"} \FunctionTok{:} \FunctionTok{\{}
+      \DataTypeTok{"Content{-}Type"} \FunctionTok{:} \StringTok{"application/json"}
+    \FunctionTok{\},}
+    \DataTypeTok{"transformers"} \FunctionTok{:} \OtherTok{[} \StringTok{"response{-}template"} \OtherTok{]}
+  \FunctionTok{\},}
+  \DataTypeTok{"uuid"} \FunctionTok{:} \StringTok{"5dd47b81{-}a184{-}4b9e{-}be02{-}b6e22c409c81"}
+\FunctionTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+我们可以通过wiremock-standalone来启动一个模拟的服务端。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{java} \AttributeTok{{-}jar}\NormalTok{ wiremock{-}standalone{-}2.7.1.jar}
+\CommentTok{\# 启动后会自动创建一个mappings目录，把我们生成的mappings目录中的内容拷贝进去，再重新运行即可}
+\end{Highlighting}
+\end{Shaded}
+
+这样访问\texttt{http://localhost:8080/vehicle/WDC1660631A7506890}就可以得到我们的契约里面写的模拟数据了。
+
+好了，如果有疑问请参考\href{https://github.com/soleverlee/spring-contract-example.git}{完整的代码}，建议参考末尾的参考文章，本文不过是跟着写了一下而已。
+
+总结一下吧，其实并没有感觉到Contract Test有多高端，不过很适用与微服务+敏捷开发这种场合。来说说我觉得不足的地方：
+
+\begin{itemize}
+\tightlist
+\item
+  契约测试依然是测试，无法替代设计，如果设计的接口是一坨*测试的再好又有什么呢；并不是反对测试，而是感觉但凡重视测试的同时容易轻视设计（或者说测试能力要比设计能力强太多\ldots)
+\item
+  如果是同三方系统对接，如何来操作呢？
+\item
+  对于一些其他的客户端就勉为其难了，比如NodeJS的客户端，无法使用生成的stubs.jar文件，客户端怎么保证得到的东西是自己想要的结果?
+\end{itemize}
+
+参考文章:
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://specto.io/blog/2016/11/16/spring-cloud-contract/}{Consumer-Driven Contract Testing with Spring Cloud Contract}
+\item
+  \href{http://cloud.spring.io/spring-cloud-contract/spring-cloud-contract.html}{Spring Cloud Contract Document}
+\end{itemize}
+
+
+\end{document}

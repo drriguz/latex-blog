@@ -1,0 +1,78 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Scheme语言的hello world}
+\blogdate{2021-01-05}
+\blogtags{编程语言, Scheme, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+最近准备创建一个简单的基于JVM的新语言，但在语法设计上犹豫不决，研究了一些资料后，觉得可能Lisp正是我所追求的清晰、简单、优雅的语法参考，因此决定深入了解一下Scheme。
+
+\section{开发环境配置}\label{ux5f00ux53d1ux73afux5883ux914dux7f6e}
+
+\subsection{运行环境}\label{ux8fd0ux884cux73afux5883}
+
+编译安装\href{https://github.com/cisco/ChezScheme}{ChezScheme}，据说是最好的scheme实现。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{git}\NormalTok{ clone https://github.com/cisco/ChezScheme.git}
+\BuiltInTok{cd}\NormalTok{ ChezScheme}
+\ExtensionTok{./configure}
+\FunctionTok{make}
+\FunctionTok{sudo}\NormalTok{ make install}
+\end{Highlighting}
+\end{Shaded}
+
+完成之后应该就可以来写一个hello world了：
+
+\begin{verbatim}
+Chez Scheme Version 9.5.5
+Copyright 1984-2020 Cisco Systems, Inc.
+
+> (+ 1 1)
+2
+>
+> (display "Hello world")
+Hello world
+\end{verbatim}
+
+\subsection{Visual studio code}\label{visual-studio-code}
+
+需要安装两个插件
+
+\begin{itemize}
+\tightlist
+\item
+  vscode-scheme
+\item
+  Code Runner
+\end{itemize}
+
+然后在settings中查找''Code-runner: Executor Map''，修改其中的scheme命令行：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\StringTok{"code{-}runner.executorMap"}\ErrorTok{:} \FunctionTok{\{}
+    \DataTypeTok{"scheme"}\FunctionTok{:} \StringTok{"scheme {-}{-}script"}
+\FunctionTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+参考：
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://www.yinwang.org/blog-cn/2013/04/11/scheme-setup}{Scheme 编程环境的设置}
+\end{itemize}
+
+
+\end{document}

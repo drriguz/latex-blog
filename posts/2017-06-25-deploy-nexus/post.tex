@@ -1,0 +1,44 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{搭建Nexus私服}
+\blogdate{2017-06-25}
+\blogtags{Docker, 云计算, 容器化}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+我们安装\href{https://store.docker.com/community/images/sonatype/nexus3}{Nexus}来作为我们的Docker镜像仓库。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{sodu}\NormalTok{ docker pull sonatype/nexus3}
+\FunctionTok{mkdir}\NormalTok{ /home/docker/nexus}
+\FunctionTok{chown} \AttributeTok{{-}R}\NormalTok{ 200 /home/docker/nexus}
+\FunctionTok{sudo}\NormalTok{ docker run }\AttributeTok{{-}d} \DataTypeTok{\textbackslash{}}
+    \AttributeTok{{-}{-}name}\NormalTok{ nexus }\DataTypeTok{\textbackslash{}}
+    \AttributeTok{{-}v}\NormalTok{ /home/docker/nexus }\DataTypeTok{\textbackslash{}}
+    \AttributeTok{{-}p}\NormalTok{ 8081:8081 }\DataTypeTok{\textbackslash{}}
+\NormalTok{    sonatype/nexus3}
+\end{Highlighting}
+\end{Shaded}
+
+安装完成后，可以访问192.168.56.101:8081，登录进去后，添加一个Docker Hosted源，比如http://192.168.56.101:8081/repository/cloud-images/
+
+我们可以把项目中需要用到的文件传到Nexus上。我们新建一个\texttt{raw}格式的repository
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{curl} \AttributeTok{{-}{-}fail} \AttributeTok{{-}u}\NormalTok{ admin:admin123 }\AttributeTok{{-}{-}upload{-}file}\NormalTok{ gradle{-}4.0{-}bin.zip }\StringTok{\textquotesingle{}http://192.168.56.101:8081/repository/files/\textquotesingle{}}
+\end{Highlighting}
+\end{Shaded}
+
+这样就可以通过http://192.168.56.101:8081/repository/files/gradle-4.0-bin.zip 来访问我们这个文件了。
+
+
+\end{document}

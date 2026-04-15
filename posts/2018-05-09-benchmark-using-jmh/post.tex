@@ -1,0 +1,98 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{使用JMH进行Benchmark测试}
+\blogdate{2018-05-09}
+\blogtags{JMH, 闲话编程, Benchmark, Perfomance, Base64, 框架}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+JMH是一个测试Java程序性能的工具，比如我们现在要测试一下JDK8自带的Base64和\href{http://www.java2s.com/Code/Java/Development-Class/AfastandmemoryefficientclasstoencodeanddecodetoandfromBASE64infullaccordancewithRFC2045.htm}{另一个实现}的性能。
+
+先看看 build.gradle 中怎么写：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{group }\StringTok{\textquotesingle{}riguz\textquotesingle{}}
+\NormalTok{version }\StringTok{\textquotesingle{}1.0{-}SNAPSHOT\textquotesingle{}}
+
+\NormalTok{apply plugin}\OperatorTok{:} \StringTok{\textquotesingle{}java\textquotesingle{}}
+
+\NormalTok{sourceCompatibility }\OperatorTok{=} \FloatTok{1.8}
+
+\NormalTok{sourceSets }\OperatorTok{\{}
+\NormalTok{    jmh}
+\OperatorTok{\}}
+\NormalTok{repositories }\OperatorTok{\{}
+    \FunctionTok{mavenCentral}\OperatorTok{()}
+\OperatorTok{\}}
+
+\NormalTok{dependencies }\OperatorTok{\{}
+\NormalTok{    jmhCompile project}
+\NormalTok{    jmhCompile }\StringTok{\textquotesingle{}org.openjdk.jmh:jmh{-}core:1.21\textquotesingle{}}
+\NormalTok{    jmhCompile }\StringTok{\textquotesingle{}org.openjdk.jmh:jmh{-}generator{-}annprocess:1.21\textquotesingle{}}
+\NormalTok{    jmhCompile group}\OperatorTok{:} \StringTok{\textquotesingle{}junit\textquotesingle{}}\OperatorTok{,}\NormalTok{ name}\OperatorTok{:} \StringTok{\textquotesingle{}junit\textquotesingle{}}\OperatorTok{,}\NormalTok{ version}\OperatorTok{:} \StringTok{\textquotesingle{}4.12\textquotesingle{}}
+\NormalTok{    testCompile group}\OperatorTok{:} \StringTok{\textquotesingle{}junit\textquotesingle{}}\OperatorTok{,}\NormalTok{ name}\OperatorTok{:} \StringTok{\textquotesingle{}junit\textquotesingle{}}\OperatorTok{,}\NormalTok{ version}\OperatorTok{:} \StringTok{\textquotesingle{}4.12\textquotesingle{}}
+\OperatorTok{\}}
+
+\NormalTok{task }\FunctionTok{jmh}\OperatorTok{(}\NormalTok{type}\OperatorTok{:}\NormalTok{ JavaExec}\OperatorTok{,}\NormalTok{ description}\OperatorTok{:} \StringTok{\textquotesingle{}Executing JMH benchmarks\textquotesingle{}}\OperatorTok{)} \OperatorTok{\{}
+\NormalTok{    classpath }\OperatorTok{=}\NormalTok{ sourceSets}\OperatorTok{.}\NormalTok{jmh}\OperatorTok{.}\NormalTok{runtimeClasspath}
+\NormalTok{    main }\OperatorTok{=} \StringTok{\textquotesingle{}org.openjdk.jmh.Main\textquotesingle{}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+然后写一个类：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\AttributeTok{@Benchmark}
+    \AttributeTok{@Warmup}\OperatorTok{(}\NormalTok{iterations }\OperatorTok{=} \DecValTok{1}\OperatorTok{,}\NormalTok{ time }\OperatorTok{=} \DecValTok{5}\OperatorTok{)}
+    \AttributeTok{@Measurement}\OperatorTok{(}\NormalTok{iterations }\OperatorTok{=} \DecValTok{1}\OperatorTok{,}\NormalTok{ time }\OperatorTok{=} \DecValTok{5}\OperatorTok{)}
+    \KeywordTok{public} \DataTypeTok{void} \FunctionTok{encodeWithJdk}\OperatorTok{()} \OperatorTok{\{}
+        \DataTypeTok{final} \DataTypeTok{byte}\OperatorTok{[]}\NormalTok{ bytes }\OperatorTok{=}\NormalTok{ Dream}\OperatorTok{.}\FunctionTok{text}\OperatorTok{.}\FunctionTok{getBytes}\OperatorTok{();}
+        \DataTypeTok{byte}\OperatorTok{[]}\NormalTok{ encoded }\OperatorTok{=}\NormalTok{ Base64}\OperatorTok{.}\FunctionTok{getEncoder}\OperatorTok{().}\FunctionTok{encode}\OperatorTok{(}\NormalTok{bytes}\OperatorTok{);}
+        \DataTypeTok{byte}\OperatorTok{[]}\NormalTok{ decoded }\OperatorTok{=}\NormalTok{ Base64}\OperatorTok{.}\FunctionTok{getDecoder}\OperatorTok{().}\FunctionTok{decode}\OperatorTok{(}\NormalTok{encoded}\OperatorTok{);}
+        \FunctionTok{assertTrue}\OperatorTok{(}\BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{equals}\OperatorTok{(}\NormalTok{bytes}\OperatorTok{,}\NormalTok{ decoded}\OperatorTok{));}
+    \OperatorTok{\}}
+
+    \AttributeTok{@Benchmark}
+    \AttributeTok{@Warmup}\OperatorTok{(}\NormalTok{iterations }\OperatorTok{=} \DecValTok{1}\OperatorTok{,}\NormalTok{ time }\OperatorTok{=} \DecValTok{5}\OperatorTok{)}
+    \AttributeTok{@Measurement}\OperatorTok{(}\NormalTok{iterations }\OperatorTok{=} \DecValTok{1}\OperatorTok{,}\NormalTok{ time }\OperatorTok{=} \DecValTok{5}\OperatorTok{)}
+    \KeywordTok{public} \DataTypeTok{void} \FunctionTok{encodeWithBase64Codec}\OperatorTok{()} \KeywordTok{throws} \BuiltInTok{IOException} \OperatorTok{\{}
+        \DataTypeTok{final} \DataTypeTok{byte}\OperatorTok{[]}\NormalTok{ bytes }\OperatorTok{=}\NormalTok{ Dream}\OperatorTok{.}\FunctionTok{text}\OperatorTok{.}\FunctionTok{getBytes}\OperatorTok{();}
+        \DataTypeTok{byte}\OperatorTok{[]}\NormalTok{ encoded }\OperatorTok{=}\NormalTok{ Base64Codec}\OperatorTok{.}\FunctionTok{encodeToByte}\OperatorTok{(}\NormalTok{bytes}\OperatorTok{,} \KeywordTok{true}\OperatorTok{);}
+        \DataTypeTok{byte}\OperatorTok{[]}\NormalTok{ decoded }\OperatorTok{=}\NormalTok{ Base64Codec}\OperatorTok{.}\FunctionTok{decodeFast}\OperatorTok{(}\NormalTok{encoded}\OperatorTok{,}\NormalTok{ encoded}\OperatorTok{.}\FunctionTok{length}\OperatorTok{);}
+        \FunctionTok{assertTrue}\OperatorTok{(}\BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{equals}\OperatorTok{(}\NormalTok{bytes}\OperatorTok{,}\NormalTok{ decoded}\OperatorTok{));}
+    \OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+其中Dream.text是一个很长的字符串。执行gradle的jmh task之后，可以得到结果
+
+\begin{verbatim}
+Benchmark                               Mode  Cnt   Score   Error  Units
+Base64BenchMark.encodeWithBase64Codec  thrpt    5  15.296 ± 2.538  ops/s
+Base64BenchMark.encodeWithJdk          thrpt    5  13.029 ± 1.563  ops/s
+\end{verbatim}
+
+看样子要比JDK的实现强一丢丢，当然只是在上面的这种情况之下。差距并不大。
+
+参考:
+
+\begin{itemize}
+\tightlist
+\item
+  http://tutorials.jenkov.com/java-performance/jmh.html\#why-are-java-microbenchmarks-hard
+\item
+  https://www.jianshu.com/p/192b782c31bc
+\end{itemize}
+
+
+\end{document}

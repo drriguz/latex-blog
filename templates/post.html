@@ -11,7 +11,7 @@
             {% if tags %}
             <span class="post-tags">
                 {% for tag in tags %}
-                <span class="tag">{{ tag }}</span>
+                <a href="{{ root_path }}tags/{{ tag }}/" class="tag">{{ tag }}</a>
                 {% endfor %}
             </span>
             {% endif %}

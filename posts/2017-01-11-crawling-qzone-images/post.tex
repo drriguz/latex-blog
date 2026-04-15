@@ -1,0 +1,60 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{抓取QQ空间皮肤图片}
+\blogdate{2017-01-11}
+\blogtags{框架, Python, 闲话编程, Scrapy}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+最近把博客重新整理了一下，博文设置featured image果然看起来现代不少，但是要去哪找这么多合适的图片呢？当然PS是一个不错的选择，但是费时费力。看到QQ空间的皮肤倒是做的不错，直接拿来用吧，反正不违法。于是想用爬虫抓取。
+
+先调试一下，找几个图片看看：
+
+\begin{verbatim}
+http://i.gtimg.cn/qzone/space_item/orig/3/103603_top.jpg
+http://i.gtimg.cn/qzone/space_item/orig/7/101703_top.jpg
+http://i.gtimg.cn/qzone/space_item/orig/5/108725_top.jpg
+http://i.gtimg.cn/qzone/space_item/orig/15/111327_top.jpg
+http://i.gtimg.cn/qzone/space_item/orig/8/106904_top.jpg
+http://i.gtimg.cn/qzone/space_item/orig/10/102490_top.jpg
+\end{verbatim}
+
+可以看到前面的网址都是一样的\texttt{orig/\%d/\%d\_top.jpg}，刚开始以为前面的一个数字是主题编号还是什么的，后面自然是图片ID，于是用以下的脚本抓取（Scrapy):
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{def}\NormalTok{ start\_requests(}\VariableTok{self}\NormalTok{):}
+    \ControlFlowTok{for}\NormalTok{ i }\KeywordTok{in} \BuiltInTok{range}\NormalTok{(}\DecValTok{0}\NormalTok{, }\DecValTok{100}\NormalTok{):}
+        \ControlFlowTok{for}\NormalTok{ j }\KeywordTok{in} \BuiltInTok{range}\NormalTok{(}\DecValTok{100000}\NormalTok{, }\DecValTok{119999}\NormalTok{):}
+\NormalTok{            url }\OperatorTok{=} \StringTok{\textquotesingle{}http://i.gtimg.cn/qzone/space\_item/orig/}\SpecialCharTok{\%d}\StringTok{/}\SpecialCharTok{\%d}\StringTok{\_top.jpg\textquotesingle{}} \OperatorTok{\%}\NormalTok{ (i, j)        }
+            \ControlFlowTok{yield}\NormalTok{ scrapy.Request(url}\OperatorTok{=}\NormalTok{url, callback}\OperatorTok{=}\VariableTok{self}\NormalTok{.parse)}
+\end{Highlighting}
+\end{Shaded}
+
+后来抓取完成后，一共15个文件夹，每个文件夹差不多都是50-80个左右，这就有点意思了，可能腾讯利用了分布式的图片服务器，分散到0-15个不同的服务器上。随便找一个看看： 101195\_top.jpg在11下面，通常取余的方式实现，于是来试试：
+
+\begin{verbatim}
+101195% 16 = 11
+\end{verbatim}
+
+另外再验证几次也都是正确的，证明的我们的猜想。于是我们可以修改一下我们的爬虫了：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ControlFlowTok{for}\NormalTok{ i }\KeywordTok{in} \BuiltInTok{range}\NormalTok{(}\DecValTok{100000}\NormalTok{, }\DecValTok{200000}\NormalTok{):}
+\NormalTok{    url }\OperatorTok{=} \StringTok{\textquotesingle{}http://i.gtimg.cn/qzone/space\_item/orig/}\SpecialCharTok{\%d}\StringTok{/}\SpecialCharTok{\%d}\StringTok{\_top.jpg\textquotesingle{}} \OperatorTok{\%}\NormalTok{ (i }\OperatorTok{\%} \DecValTok{16}\NormalTok{, i) }
+    \ControlFlowTok{yield}\NormalTok{ scrapy.Request(url}\OperatorTok{=}\NormalTok{url, callback}\OperatorTok{=}\VariableTok{self}\NormalTok{.parse)}
+\end{Highlighting}
+\end{Shaded}
+
+这样抓取就快多了，总共抓取了1232个图片。
+
+
+\end{document}

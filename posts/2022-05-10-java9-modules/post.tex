@@ -1,0 +1,175 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Java9模块(Modules)}
+\blogdate{2022-05-10}
+\blogtags{编程语言, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+Java9中引入的最重要的特性是模块化------Java Platform Module System (JPMS)。实现模块化是一件非常有挑战性的事情，在此之前，已经有过一些非官方的解决方案例如OSGI。实际在2005年Java 7的时候\href{https://jcp.org/en/jsr/detail?id=277}{JSR 277: Java Module System}就提议要模块化Java SE，后面该提议又被\href{https://jcp.org/en/jsr/detail?id=376}{JSR 376: Java Platform Module System}取代并推延到Java 8，又推延到Java 9，最终直到2017年Java 9推迟后才发布出来。
+
+\section{目标}\label{ux76eeux6807}
+
+JSR 376中阐述了模块化Java SE平台的关键目标：
+
+\begin{itemize}
+\tightlist
+\item
+  可靠的依赖配置： 必须要能够通过模块化系统显式定义模块的依赖信息，能够在编译期和运行时都能够有效识别，并可以通过遍历所有模块的方式得到程序运行所需的所有模块信息。
+\item
+  高度封装性：只有当模块中的包显式暴露、且被其他模块显式依赖的时候才能使用。
+\item
+  对Java 平台进行定制：可以对特定平台删除或者添加模块，从而实现Java平台的裁剪。
+\item
+  隐藏Java平台细节：一些不希望暴露给用户的方法可以通过模块化隐藏起来。
+\item
+  提高运行效率：在预知模块依赖的情况下，JVM有一些优化可以提高性能。
+\end{itemize}
+
+\section{模块化的使用}\label{ux6a21ux5757ux5316ux7684ux4f7fux7528}
+
+\subsection{JDK的模块}\label{jdkux7684ux6a21ux5757}
+
+JDK本身也拆分成了一系列的模块，可以通过命令列出来:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\ExtensionTok{java} \AttributeTok{{-}{-}list{-}modules}                                   
+
+\ExtensionTok{java.base@11.0.13}
+\ExtensionTok{java.compiler@11.0.13}
+\ExtensionTok{java.datatransfer@11.0.13}
+\ExtensionTok{java.desktop@11.0.13}
+\ExtensionTok{java.instrument@11.0.13}
+\ExtensionTok{java.logging@11.0.13}
+\ExtensionTok{java.management@11.0.13}
+\ExtensionTok{...}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{如何创建一个模块}\label{ux5982ux4f55ux521bux5efaux4e00ux4e2aux6a21ux5757}
+
+创建模块十分简单，只需要添加一个特殊的module-info.java文件，并添加模块的描述信息(requires, exports, provides..with, uses, opens)：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{module modulename }\OperatorTok{\{}
+\NormalTok{    requires module}\OperatorTok{.}\FunctionTok{name}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{requires}用来申明模块依赖于其他模块
+\item
+  \texttt{requires\ static}用来申明编译时依赖（运行时是可选的）
+\item
+  \texttt{requires\ transtive}表示如果A依赖某个模块B，那么依赖A的模块也隐式依赖B
+\item
+  \texttt{exports}导出包下的public类型（包括嵌套的public和protected类型）
+\item
+  \texttt{exports...to}仅导出给指定的模块
+\item
+  \texttt{uses}申明该模块为服务的消费者（使用了某接口或者抽象类）
+\item
+  \texttt{provides...with}申明模块为服务ud提供者（提供了实现）
+\item
+  \texttt{opens}申明包对于其他模块在运行时（包括反射）可见
+\item
+  \texttt{opens..to}申明包对于特定的模块模块在运行时（包括反射）可见
+\item
+  \texttt{open}申明模块下的所有包均在运行时可见
+\end{itemize}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{module my}\OperatorTok{.}\FunctionTok{module} \OperatorTok{\{}
+\NormalTok{    exports com}\OperatorTok{.}\FunctionTok{my}\OperatorTok{.}\FunctionTok{package}\OperatorTok{.}\FunctionTok{name}\OperatorTok{;}
+\OperatorTok{\}}
+
+\NormalTok{module my}\OperatorTok{.}\FunctionTok{module} \OperatorTok{\{}
+\NormalTok{    export com}\OperatorTok{.}\FunctionTok{my}\OperatorTok{.}\FunctionTok{package}\OperatorTok{.}\FunctionTok{name}\NormalTok{ to com}\OperatorTok{.}\FunctionTok{specific}\OperatorTok{.}\FunctionTok{package}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{module my}\OperatorTok{.}\FunctionTok{module} \OperatorTok{\{}
+\NormalTok{    uses }\KeywordTok{class}\OperatorTok{.}\FunctionTok{name}\OperatorTok{;}
+\OperatorTok{\}}
+
+\NormalTok{module my}\OperatorTok{.}\FunctionTok{module} \OperatorTok{\{}
+\NormalTok{    provides MyInterface with MyInterfaceImpl}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+默认情况下，private在模块中是不可见的（即使通过反射的方式），因此如果想暴露出来，可以通过\texttt{open}来实现。
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{module foo }\OperatorTok{\{}
+\NormalTok{    opens com}\OperatorTok{.}\FunctionTok{example}\OperatorTok{.}\FunctionTok{bar}\OperatorTok{;}
+\OperatorTok{\}}
+
+\NormalTok{module my}\OperatorTok{.}\FunctionTok{module} \OperatorTok{\{}
+\NormalTok{    opens com}\OperatorTok{.}\FunctionTok{my}\OperatorTok{.}\FunctionTok{package}\NormalTok{ to moduleOne}\OperatorTok{,}\NormalTok{ moduleTwo}\OperatorTok{,}\NormalTok{ etc}\OperatorTok{.;}
+\OperatorTok{\}}
+
+\NormalTok{open module foo }\OperatorTok{\{}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\section{Example：创建一个Java FX程序}\label{exampleux521bux5efaux4e00ux4e2ajava-fxux7a0bux5e8f}
+
+首先，需要通过gradle插件来自动引入JavaFX的依赖项:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{plugins }\OperatorTok{\{}
+\NormalTok{    id }\StringTok{\textquotesingle{}java\textquotesingle{}}
+\NormalTok{    id }\StringTok{\textquotesingle{}application\textquotesingle{}}
+\NormalTok{    id }\StringTok{\textquotesingle{}org.openjfx.javafxplugin\textquotesingle{}}\NormalTok{ version }\StringTok{\textquotesingle{}0.0.10\textquotesingle{}}
+\OperatorTok{\}}
+
+\NormalTok{javafx }\OperatorTok{\{}
+\NormalTok{    version }\OperatorTok{=} \StringTok{"17.0.1"}
+\NormalTok{    modules }\OperatorTok{=} \OperatorTok{[} \StringTok{\textquotesingle{}javafx.controls\textquotesingle{}} \OperatorTok{]}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+然后，在module-info.java中申明依赖关系:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{module pulsar}\OperatorTok{.}\FunctionTok{browser} \OperatorTok{\{}
+\NormalTok{    requires javafx}\OperatorTok{.}\FunctionTok{controls}\OperatorTok{;}
+\NormalTok{    exports com}\OperatorTok{.}\FunctionTok{riguz}\OperatorTok{.}\FunctionTok{pulsar}\OperatorTok{.}\FunctionTok{browser}\OperatorTok{;}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+Ref:
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://www.oracle.com/hk/corporate/features/understanding-java-9-modules.html}{Understanding Java 9 Modules}
+\item
+  \href{https://openjdk.java.net/jeps/200}{JEP 200: The Modular JDK}
+\end{itemize}
+
+
+\end{document}

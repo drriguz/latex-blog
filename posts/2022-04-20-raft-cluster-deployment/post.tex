@@ -1,0 +1,213 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{Raft集群在Kubernetes中的部署问题}
+\blogdate{2022-04-20}
+\blogtags{架构, 云计算, Raft}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+一个Raft集群在程序启动的时候，其实就必须知道集群中所有其他节点的信息（ip，端口等），如果集群部署在Kubernetes中，怎么进行扩容呢？这是个矛盾的问题：一旦扩容，则集群中节点的信息会发生变化。
+
+在Kubernetes中，使用StatefulSet可以解决这一问题。
+
+\section{Apache Ratis中集群中Raft节点的创建}\label{apache-ratisux4e2dux96c6ux7fa4ux4e2draftux8282ux70b9ux7684ux521bux5efa}
+
+以Apache Ratis为例，在集群中创建Raft节点时，需要初始化一个RaftServer对象：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{RaftGroup raftGroup }\OperatorTok{=}\NormalTok{ RaftGroup}\OperatorTok{.}\FunctionTok{valueOf}\OperatorTok{(}\NormalTok{RaftGroupId}\OperatorTok{.}\FunctionTok{valueOf}\OperatorTok{(}\BuiltInTok{UUID}\OperatorTok{.}\FunctionTok{fromString}\OperatorTok{(}\StringTok{"02511d47{-}d67c{-}49a3{-}9011{-}abb3109a44c1"}\OperatorTok{)),}\NormalTok{ raftPeers}\OperatorTok{)}
+\NormalTok{RaftServer server }\OperatorTok{=}\NormalTok{ RaftServer}\OperatorTok{.}\FunctionTok{newBuilder}\OperatorTok{()}
+        \OperatorTok{.}\FunctionTok{setGroup}\OperatorTok{(}\NormalTok{raftGroup}\OperatorTok{)}
+        \OperatorTok{.}\FunctionTok{setProperties}\OperatorTok{(}\NormalTok{properties}\OperatorTok{)}
+        \OperatorTok{.}\FunctionTok{setServerId}\OperatorTok{(}\NormalTok{id}\OperatorTok{)}
+        \OperatorTok{.}\FunctionTok{setStateMachine}\OperatorTok{(}\NormalTok{stateMachine}\OperatorTok{)}
+        \OperatorTok{.}\FunctionTok{build}\OperatorTok{()}
+\end{Highlighting}
+\end{Shaded}
+
+其中，raftPeers即所有节点的信息，这个是提前就知晓的，包括其地址和端口号。比如，raft.node.01:6000。
+
+\section{使用StategulSet}\label{ux4f7fux7528stategulset}
+
+\subsection{什么是StategulSet}\label{ux4ec0ux4e48ux662fstategulset}
+
+通常在Kubernates中部署节点使用Deployment部署时，每次重新部署Kubernates都会为其分配新的资源，包括名称、所依赖的pv等。也就是说，它是无状态的，每次创建的Pod都与之前的没什么关系。
+
+而StatefulSet则未解决这一问题而设计，使用它能够创建出一组``稳定''的Pods。以一个Nginx集群为例：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{apiVersion}\KeywordTok{:}\AttributeTok{ apps/v1}
+\FunctionTok{kind}\KeywordTok{:}\AttributeTok{ StatefulSet}
+\FunctionTok{metadata}\KeywordTok{:}
+\AttributeTok{  }\FunctionTok{name}\KeywordTok{:}\AttributeTok{ web}
+\FunctionTok{spec}\KeywordTok{:}
+\AttributeTok{  }\FunctionTok{serviceName}\KeywordTok{:}\AttributeTok{ }\StringTok{"nginx"}
+\AttributeTok{  }\FunctionTok{replicas}\KeywordTok{:}\AttributeTok{ }\DecValTok{2}
+\AttributeTok{  }\FunctionTok{selector}\KeywordTok{:}
+\AttributeTok{    }\FunctionTok{matchLabels}\KeywordTok{:}
+\AttributeTok{      }\FunctionTok{app}\KeywordTok{:}\AttributeTok{ nginx}
+\AttributeTok{  }\FunctionTok{template}\KeywordTok{:}
+\AttributeTok{    }\FunctionTok{metadata}\KeywordTok{:}
+\AttributeTok{      }\FunctionTok{labels}\KeywordTok{:}
+\AttributeTok{        }\FunctionTok{app}\KeywordTok{:}\AttributeTok{ nginx}
+\AttributeTok{    }\FunctionTok{spec}\KeywordTok{:}
+\AttributeTok{      }\FunctionTok{containers}\KeywordTok{:}
+\AttributeTok{      }\KeywordTok{{-}}\AttributeTok{ }\FunctionTok{name}\KeywordTok{:}\AttributeTok{ nginx}
+\AttributeTok{        }\FunctionTok{image}\KeywordTok{:}\AttributeTok{ k8s.gcr.io/nginx{-}slim:0.8}
+\AttributeTok{        }\FunctionTok{ports}\KeywordTok{:}
+\AttributeTok{        }\KeywordTok{{-}}\AttributeTok{ }\FunctionTok{containerPort}\KeywordTok{:}\AttributeTok{ }\DecValTok{80}
+\AttributeTok{          }\FunctionTok{name}\KeywordTok{:}\AttributeTok{ web}
+\AttributeTok{        }\FunctionTok{volumeMounts}\KeywordTok{:}
+\AttributeTok{        }\KeywordTok{{-}}\AttributeTok{ }\FunctionTok{name}\KeywordTok{:}\AttributeTok{ www}
+\AttributeTok{          }\FunctionTok{mountPath}\KeywordTok{:}\AttributeTok{ /usr/share/nginx/html}
+\AttributeTok{  }\FunctionTok{volumeClaimTemplates}\KeywordTok{:}
+\AttributeTok{  }\KeywordTok{{-}}\AttributeTok{ }\FunctionTok{metadata}\KeywordTok{:}
+\AttributeTok{      }\FunctionTok{name}\KeywordTok{:}\AttributeTok{ www}
+\AttributeTok{    }\FunctionTok{spec}\KeywordTok{:}
+\AttributeTok{      }\FunctionTok{accessModes}\KeywordTok{:}\AttributeTok{ }\KeywordTok{[}\AttributeTok{ }\StringTok{"ReadWriteOnce"}\AttributeTok{ }\KeywordTok{]}
+\AttributeTok{      }\FunctionTok{resources}\KeywordTok{:}
+\AttributeTok{        }\FunctionTok{requests}\KeywordTok{:}
+\AttributeTok{          }\FunctionTok{storage}\KeywordTok{:}\AttributeTok{ 1Gi}
+\end{Highlighting}
+\end{Shaded}
+
+创建完成后，则可以看到部署的节点：
+
+\begin{verbatim}
+ ﮫ17ms⠀   kubectl get statefulset        powershell   80  18:02:55 
+NAME   READY   AGE
+web    3/3     5d18h
+ ﮫ1.511s⠀   kubectl get pods
+NAME    READY   STATUS    RESTARTS   AGE
+web-0   1/1     Running   0          3d6h
+web-1   1/1     Running   0          3d6h
+web-2   1/1     Running   0          5d18h
+\end{verbatim}
+
+可以看到，Kubernates为其创建了web-0\textasciitilde2三个实例，无论修改还是重新部署，这个名称是不会变化的，并且其分配的持久化卷也是相对固定的。
+
+因此，我们通过StatefulSet可以：
+
+\begin{itemize}
+\tightlist
+\item
+  保持pod的状态
+\item
+  预知所有pod的地址（名称）
+\end{itemize}
+
+这可以帮助实现Raft集群的创建。
+
+\subsection{节点间解析}\label{ux8282ux70b9ux95f4ux89e3ux6790}
+
+还需要解决一个问题，就是在每个Pod中都需要能够访问其他节点。根据前面的规则可以知道其他节点的名称，如web-1，但是Kubernates并不支持在在节点中解析其他节点，如果我们在web-0中pingweb-1肯定是不通的。
+
+要实现互相解析，需要使用headless-service:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{apiVersion}\KeywordTok{:}\AttributeTok{ v1}
+\FunctionTok{kind}\KeywordTok{:}\AttributeTok{ Service}
+\FunctionTok{metadata}\KeywordTok{:}
+\AttributeTok{  }\FunctionTok{name}\KeywordTok{:}\AttributeTok{ nginx}
+\AttributeTok{  }\FunctionTok{labels}\KeywordTok{:}
+\AttributeTok{    }\FunctionTok{app}\KeywordTok{:}\AttributeTok{ nginx}
+\FunctionTok{spec}\KeywordTok{:}
+\AttributeTok{  }\FunctionTok{ports}\KeywordTok{:}
+\AttributeTok{  }\KeywordTok{{-}}\AttributeTok{ }\FunctionTok{port}\KeywordTok{:}\AttributeTok{ }\DecValTok{80}
+\AttributeTok{    }\FunctionTok{name}\KeywordTok{:}\AttributeTok{ web}
+\AttributeTok{  }\FunctionTok{clusterIP}\KeywordTok{:}\AttributeTok{ None}
+\AttributeTok{  }\FunctionTok{selector}\KeywordTok{:}
+\AttributeTok{    }\FunctionTok{app}\KeywordTok{:}\AttributeTok{ nginx}
+\end{Highlighting}
+\end{Shaded}
+
+创建headless-service之后，将可以使用\texttt{\{podName\}.\{headlessSvcName\}}的方式来解析，例如web-1.nginx：
+
+\begin{verbatim}
+ ﮫ224ms⠀   kubectl get svc
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.232.0.1   <none>        443/TCP   181d
+nginx        ClusterIP   None         <none>        80/TCP    5d18h
+
+ ﮫ0ms⠀   kubectl exec -it web-0 -- /bin/bashowershell   99  14:28:24 
+root@web-0:/# curl web-1.nginx
+<html>
+<head><title>403 Forbidden</title></head>
+<body bgcolor="white">
+<center><h1>403 Forbidden</h1></center>
+<hr><center>nginx/1.11.1</center>
+</body>
+</html>
+root@web-0:/#
+\end{verbatim}
+
+\subsection{实现部署}\label{ux5b9eux73b0ux90e8ux7f72}
+
+\subsubsection{程序中按名称创建RaftGroup}\label{ux7a0bux5e8fux4e2dux6309ux540dux79f0ux521bux5efaraftgroup}
+
+通过以上的方式，在知道集群副本数目、pod name、headless svc名称的情况下可以得到所有机器的地址。因此，可以将这些信息传入到程序中，根据这些构建RaftGroup：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{raft}\KeywordTok{:}
+\AttributeTok{  }\FunctionTok{group}\KeywordTok{:}\AttributeTok{ }\StringTok{"02511d47{-}d67c{-}49a3{-}9011{-}abb3109a44c1"}
+\AttributeTok{  }\FunctionTok{dataStoragePath}\KeywordTok{:}\AttributeTok{ /data/ratis{-}data}
+\AttributeTok{  }\FunctionTok{id}\KeywordTok{:}\AttributeTok{ dw{-}dynamic{-}service{-}0}
+\AttributeTok{  }\FunctionTok{peers}\KeywordTok{:}
+\AttributeTok{    }\FunctionTok{size}\KeywordTok{:}\AttributeTok{ }\DecValTok{3}
+\AttributeTok{    }\FunctionTok{pattern}\KeywordTok{:}\AttributeTok{ dw{-}dynamic{-}service{-}\%d}
+\AttributeTok{    }\FunctionTok{port}\KeywordTok{:}\AttributeTok{ }\DecValTok{6000}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\BuiltInTok{Map}\OperatorTok{\textless{}}\BuiltInTok{String}\OperatorTok{,}\NormalTok{ RaftConfig}\OperatorTok{.}\FunctionTok{PeerConfig}\OperatorTok{\textgreater{}}\NormalTok{ peers }\OperatorTok{=} \KeywordTok{new} \BuiltInTok{HashMap}\OperatorTok{\textless{}\textgreater{}();}
+\ControlFlowTok{for} \OperatorTok{(}\DataTypeTok{int}\NormalTok{ i }\OperatorTok{=} \DecValTok{0}\OperatorTok{;}\NormalTok{ i }\OperatorTok{\textless{}}\NormalTok{ clusterSize}\OperatorTok{;}\NormalTok{ i}\OperatorTok{++)} \OperatorTok{\{}
+    \BuiltInTok{String}\NormalTok{ host }\OperatorTok{=} \BuiltInTok{String}\OperatorTok{.}\FunctionTok{format}\OperatorTok{(}\NormalTok{properties}\OperatorTok{.}\FunctionTok{getPeers}\OperatorTok{().}\FunctionTok{getPattern}\OperatorTok{(),}\NormalTok{ i}\OperatorTok{);}
+    \BuiltInTok{String}\NormalTok{ address }\OperatorTok{=} \BuiltInTok{String}\OperatorTok{.}\FunctionTok{format}\OperatorTok{(}\StringTok{"}\SpecialCharTok{\%s}\StringTok{:}\SpecialCharTok{\%d}\StringTok{"}\OperatorTok{,}\NormalTok{ host}\OperatorTok{,}\NormalTok{ properties}\OperatorTok{.}\FunctionTok{getPeers}\OperatorTok{().}\FunctionTok{getPort}\OperatorTok{());}
+\NormalTok{    peers}\OperatorTok{.}\FunctionTok{put}\OperatorTok{(}\NormalTok{host}\OperatorTok{,} \KeywordTok{new}\NormalTok{ RaftConfig}\OperatorTok{.}\FunctionTok{PeerConfig}\OperatorTok{(}\NormalTok{address}\OperatorTok{));}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsubsection{获取pod名称}\label{ux83b7ux53d6podux540dux79f0}
+
+可以通过metadata.name获取pod的名称，并作为环境变量传入到pod中。
+
+\begin{verbatim}
+env:
+    - name: POD_NAME
+        valueFrom:
+        fieldRef:
+            fieldPath: metadata.name
+    - name: RAFT_ID
+        value: {{ printf "$(POD_NAME).%s" (include "my-service.headless-svcname" .) }}
+\end{verbatim}
+
+\subsubsection{helm部署}\label{helmux90e8ux7f72}
+
+其他信息通过helm可以很容易生成出来，例如上面的应用的raft配置:
+
+\begin{verbatim}
+raft:
+    group: {{ .Values.raft.group }}
+    dataStoragePath: /data/ratis-data
+    peers:
+    size: {{ .Values.replicaCount }}
+    pattern: {{ printf "%s-%%d.%s" (include "my-service.fullname" .) (include "my-service.headless-svcname" .) }}
+    port: 6000
+\end{verbatim}
+
+
+\end{document}

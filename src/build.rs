@@ -39,9 +39,17 @@ pub fn build_site(root: &Path) -> Result<()> {
         let post_output_dir = output_dir.join("posts").join(&post.slug);
         std::fs::create_dir_all(&post_output_dir)?;
 
-        // 1. Convert LaTeX to HTML via Pandoc
-        println!("[pandoc] Converting {} ...", post.title);
-        let html_fragment = run_pandoc(&post_source_dir.join("post.tex"), &shared_dir)?;
+        // 1. Convert to HTML via Pandoc
+        // Prefer post.md (markdown) for better code highlighting; fall back to post.tex
+        let md_source = post_source_dir.join("post.md");
+        let tex_source = post_source_dir.join("post.tex");
+        let html_fragment = if md_source.exists() {
+            println!("[pandoc] Converting {} (from markdown) ...", post.title);
+            run_pandoc_md(&md_source, &shared_dir)?
+        } else {
+            println!("[pandoc] Converting {} (from latex) ...", post.title);
+            run_pandoc(&tex_source, &shared_dir)?
+        };
 
         // 2. Render full HTML page with template
         let full_html = template::render_post(
@@ -81,6 +89,10 @@ pub fn build_site(root: &Path) -> Result<()> {
     let index_html = template::render_index(&tera, &posts)?;
     std::fs::write(output_dir.join("index.html"), &index_html)?;
 
+    // Generate tag pages
+    println!("[tags] Generating tag pages ...");
+    generate_tag_pages(&tera, &posts, &output_dir)?;
+
     // Copy static assets
     let static_dir = root.join("static");
     if static_dir.exists() {
@@ -112,6 +124,26 @@ fn discover_posts(posts_dir: &Path) -> Result<Vec<PostMeta>> {
     Ok(posts)
 }
 
+fn generate_tag_pages(tera: &tera::Tera, posts: &[PostMeta], output_dir: &Path) -> Result<()> {
+    use std::collections::HashMap;
+    let mut tag_map: HashMap<String, Vec<PostMeta>> = HashMap::new();
+
+    for post in posts {
+        for tag in &post.tags {
+            tag_map.entry(tag.clone()).or_default().push(post.clone());
+        }
+    }
+
+    for (tag, tag_posts) in tag_map {
+        let tag_dir = output_dir.join("tags").join(&tag);
+        std::fs::create_dir_all(&tag_dir)?;
+        let html = template::render_tag_index(tera, &tag, &tag_posts)?;
+        std::fs::write(tag_dir.join("index.html"), html)?;
+    }
+
+    Ok(())
+}
+
 fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
     let output = Command::new("pandoc")
         .arg(tex_path)
@@ -119,7 +151,8 @@ fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
         .arg("--to=html5")
         .arg("--standalone") // Required for TOC generation
         .arg("--toc") // Generate table of contents
-        .arg("--toc-depth=2") // TOC depth up to level 2 headers
+        .arg("--toc-depth=3") // TOC depth up to level 3 headers
+        .arg("--number-sections") // Add section numbering
         .arg("--citeproc") // Process citations
         .arg(format!(
             "--bibliography={}",
@@ -130,7 +163,7 @@ fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
             shared_dir.join("numeric.csl").display()
         ))
         .arg("--mathjax") // outputs math in a format KaTeX auto-render can pick up
-        .arg("--highlight-style=pygments")
+        .arg("--syntax-highlighting=none") // Let highlight.js handle syntax highlighting
         .arg(format!(
             "--resource-path={}:{}",
             tex_path.parent().unwrap().display(),
@@ -140,6 +173,10 @@ fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
             "--lua-filter={}",
             shared_dir.join("sidenote.lua").display()
         ))
+        .arg(format!(
+            "--lua-filter={}",
+            shared_dir.join("codeblock.lua").display()
+        ))
         .output()
         .context("Failed to run pandoc. Is pandoc installed?")?;
 
@@ -148,7 +185,42 @@ fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
         anyhow::bail!("Pandoc failed:\n{}", stderr);
     }
 
-    let html = String::from_utf8(output.stdout).context("Pandoc produced invalid UTF-8")?;
+    extract_body(&output.stdout)
+}
+
+fn run_pandoc_md(md_path: &Path, shared_dir: &Path) -> Result<String> {
+    let output = Command::new("pandoc")
+        .arg(md_path)
+        .arg("--from=markdown")
+        .arg("--to=html5")
+        .arg("--standalone")
+        .arg("--toc")
+        .arg("--toc-depth=3")
+        .arg("--number-sections")
+        .arg("--mathjax")
+        .arg("--syntax-highlighting=none") // Let highlight.js handle syntax highlighting
+        .arg(format!(
+            "--lua-filter={}",
+            shared_dir.join("codeblock.lua").display()
+        ))
+        .arg(format!(
+            "--resource-path={}:{}",
+            md_path.parent().unwrap().display(),
+            shared_dir.display()
+        ))
+        .output()
+        .context("Failed to run pandoc. Is pandoc installed?")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Pandoc (markdown) failed:\n{}", stderr);
+    }
+
+    extract_body(&output.stdout)
+}
+
+fn extract_body(stdout: &[u8]) -> Result<String> {
+    let html = String::from_utf8(stdout.to_vec()).context("Pandoc produced invalid UTF-8")?;
 
     // Extract just the body content from the standalone HTML (remove <html>, <head>, <body> tags)
     // Find content between <body> and </body>

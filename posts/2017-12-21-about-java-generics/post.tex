@@ -1,0 +1,265 @@
+\documentclass[12pt]{article}
+\usepackage{latexblog}
+
+% ============================================================
+% Blog Metadata
+% ============================================================
+\blogtitle{关于 Java泛型}
+\blogdate{2017-12-21}
+\blogtags{编程语言, 闲话编程}
+\bloglang{zh}
+\blogsummary{}
+
+\begin{document}
+\makeblogtitle
+
+泛型是Java1.5之后一个比较有用的特性，有点类似于C++的模板。最简单的一个例子：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{class} \BuiltInTok{Wrapper}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}} \OperatorTok{\{}
+    \DataTypeTok{final}\NormalTok{ T data}\OperatorTok{;}
+
+    \BuiltInTok{Wrapper}\OperatorTok{(}\NormalTok{T data}\OperatorTok{)} \OperatorTok{\{}
+        \KeywordTok{this}\OperatorTok{.}\FunctionTok{data} \OperatorTok{=}\NormalTok{ data}\OperatorTok{;}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+有一些可能不是特别常用的Generics，我们来简单看一下。
+
+\section{Bounded Generics}\label{bounded-generics}
+
+\subsection{Multiple bound}\label{multiple-bound}
+
+如果一个类继承了多个接口，是这样的写法：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{interface}\NormalTok{ I }\OperatorTok{\{\}}
+\KeywordTok{interface}\NormalTok{ M }\OperatorTok{\{\}}
+\KeywordTok{abstract} \KeywordTok{class}\NormalTok{ C }\OperatorTok{\{\}}
+
+\KeywordTok{class}\NormalTok{ Foo }\KeywordTok{extends}\NormalTok{ C }\KeywordTok{implements}\NormalTok{ I}\OperatorTok{,}\NormalTok{M }\OperatorTok{\{\}}
+\end{Highlighting}
+\end{Shaded}
+
+假如一个方法的泛型参数包含多个Bound，则要这样写了：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\OperatorTok{\textless{}}\NormalTok{T }\KeywordTok{extends}\NormalTok{ I }\OperatorTok{\&}\NormalTok{ M}\OperatorTok{\textgreater{}} \DataTypeTok{void} \FunctionTok{bar}\OperatorTok{(}\NormalTok{T arg}\OperatorTok{)\{\}}
+\OperatorTok{\textless{}}\NormalTok{T }\KeywordTok{extends}\NormalTok{ C}\OperatorTok{\textgreater{}} \DataTypeTok{void} \FunctionTok{ooo}\OperatorTok{(}\NormalTok{T arg}\OperatorTok{)\{\}}
+\OperatorTok{\textless{}}\NormalTok{T }\KeywordTok{extends}\NormalTok{ C }\OperatorTok{\&}\NormalTok{ I }\OperatorTok{\&}\NormalTok{ M}\OperatorTok{\textgreater{}} \DataTypeTok{void} \FunctionTok{xxx}\OperatorTok{(}\NormalTok{T arg}\OperatorTok{)\{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Unbounded wildcards}\label{unbounded-wildcards}
+
+使用 ? 修饰符可以用作类型转换，List\textless?\textgreater{} 意味着是一个未知类型的List，可能是\texttt{List\textless{}A\textgreater{}} 也可能是\texttt{List\textless{}B\textgreater{}}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{private} \DataTypeTok{final} \BuiltInTok{List}\OperatorTok{\textless{}}\BuiltInTok{String}\OperatorTok{\textgreater{}}\NormalTok{ strList }\OperatorTok{=} \BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{asList}\OperatorTok{(}\StringTok{"Hello"}\OperatorTok{,} \StringTok{"World!"}\OperatorTok{);}
+\KeywordTok{private} \DataTypeTok{final} \BuiltInTok{List}\OperatorTok{\textless{}}\BuiltInTok{Integer}\OperatorTok{\textgreater{}}\NormalTok{ intList }\OperatorTok{=} \BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{asList}\OperatorTok{(}\DecValTok{1}\OperatorTok{,} \DecValTok{2}\OperatorTok{,} \DecValTok{3}\OperatorTok{);}
+\KeywordTok{private} \DataTypeTok{final} \BuiltInTok{List}\OperatorTok{\textless{}}\BuiltInTok{Float}\OperatorTok{\textgreater{}}\NormalTok{ floatList }\OperatorTok{=} \BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{asList}\OperatorTok{(}\FloatTok{1.1f}\OperatorTok{,} \FloatTok{2.1f}\OperatorTok{,} \FloatTok{3.1f}\OperatorTok{);}
+\KeywordTok{private} \DataTypeTok{final} \BuiltInTok{List}\OperatorTok{\textless{}}\BuiltInTok{Number}\OperatorTok{\textgreater{}}\NormalTok{ numberList }\OperatorTok{=} \BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{asList}\OperatorTok{(}\DecValTok{1}\OperatorTok{,} \FloatTok{1.0f}\OperatorTok{,} \DecValTok{3000L}\OperatorTok{);}
+
+\KeywordTok{public} \DataTypeTok{void} \FunctionTok{cast}\OperatorTok{()} \OperatorTok{\{}
+    \BuiltInTok{List}\OperatorTok{\textless{}?\textgreater{}}\NormalTok{ unknownList }\OperatorTok{=} \KeywordTok{null}\OperatorTok{;}
+\NormalTok{    unknownList }\OperatorTok{=}\NormalTok{ strList}\OperatorTok{;}
+\NormalTok{    unknownList }\OperatorTok{=}\NormalTok{ intList}\OperatorTok{;}
+\NormalTok{    unknownList }\OperatorTok{=}\NormalTok{ floatList}\OperatorTok{;}
+\NormalTok{    unknownList }\OperatorTok{=}\NormalTok{ numberList}\OperatorTok{;}
+
+    \ControlFlowTok{for} \OperatorTok{(}\DataTypeTok{int}\NormalTok{ i }\OperatorTok{=} \DecValTok{0}\OperatorTok{;}\NormalTok{ i }\OperatorTok{\textless{}}\NormalTok{ unknownList}\OperatorTok{.}\FunctionTok{size}\OperatorTok{();}\NormalTok{ i}\OperatorTok{++)} \OperatorTok{\{}
+        \CommentTok{// Number item = unknownList.get(i); wrong! }
+        \BuiltInTok{Object}\NormalTok{ item }\OperatorTok{=}\NormalTok{ unknownList}\OperatorTok{.}\FunctionTok{get}\OperatorTok{(}\NormalTok{i}\OperatorTok{);}
+        \BuiltInTok{System}\OperatorTok{.}\FunctionTok{out}\OperatorTok{.}\FunctionTok{println}\OperatorTok{(}\NormalTok{item }\OperatorTok{+} \StringTok{"("} \OperatorTok{+}\NormalTok{ item}\OperatorTok{.}\FunctionTok{getClass}\OperatorTok{()} \OperatorTok{+} \StringTok{")"}\OperatorTok{);}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\CommentTok{/* output}
+\CommentTok{1(class java.lang.Integer)}
+\CommentTok{1.0(class java.lang.Float)}
+\CommentTok{3000(class java.lang.Long)}
+\CommentTok{*/}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Upper bounded wildcards}\label{upper-bounded-wildcards}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \DataTypeTok{static} \DataTypeTok{double} \FunctionTok{sumOfList}\OperatorTok{(}\BuiltInTok{List}\OperatorTok{\textless{}?} \KeywordTok{extends} \BuiltInTok{Number}\OperatorTok{\textgreater{}}\NormalTok{ list}\OperatorTok{)} \OperatorTok{\{}
+    \DataTypeTok{double}\NormalTok{ s }\OperatorTok{=} \FloatTok{0.0}\OperatorTok{;}
+    \ControlFlowTok{for} \OperatorTok{(}\BuiltInTok{Number}\NormalTok{ n }\OperatorTok{:}\NormalTok{ list}\OperatorTok{)}
+\NormalTok{        s }\OperatorTok{+=}\NormalTok{ n}\OperatorTok{.}\FunctionTok{doubleValue}\OperatorTok{();}
+    \ControlFlowTok{return}\NormalTok{ s}\OperatorTok{;}
+\OperatorTok{\}}
+\CommentTok{//...}
+\FunctionTok{sumOfList}\OperatorTok{(}\BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{asList}\OperatorTok{(}\DecValTok{1}\OperatorTok{,} \DecValTok{2}\OperatorTok{,} \DecValTok{3}\OperatorTok{));}
+\FunctionTok{sumOfList}\OperatorTok{(}\BuiltInTok{Arrays}\OperatorTok{.}\FunctionTok{asList}\OperatorTok{(}\FloatTok{1.0f}\OperatorTok{,} \FloatTok{2.0f}\OperatorTok{,} \FloatTok{3.0f}\OperatorTok{));}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Lower bounded wildcards}\label{lower-bounded-wildcards}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \DataTypeTok{static} \DataTypeTok{void} \FunctionTok{addNumbers}\OperatorTok{(}\BuiltInTok{List}\OperatorTok{\textless{}?} \KeywordTok{super} \BuiltInTok{Number}\OperatorTok{\textgreater{}}\NormalTok{ list}\OperatorTok{)} \OperatorTok{\{}
+    \ControlFlowTok{for} \OperatorTok{(}\DataTypeTok{int}\NormalTok{ i }\OperatorTok{=} \DecValTok{1}\OperatorTok{;}\NormalTok{ i }\OperatorTok{\textless{}=} \DecValTok{10}\OperatorTok{;}\NormalTok{ i}\OperatorTok{++)} \OperatorTok{\{}
+\NormalTok{        list}\OperatorTok{.}\FunctionTok{add}\OperatorTok{(}\NormalTok{i}\OperatorTok{);}
+\NormalTok{        list}\OperatorTok{.}\FunctionTok{add}\OperatorTok{(}\FloatTok{1.0f}\OperatorTok{);}
+    \OperatorTok{\}}
+\OperatorTok{\}}
+\FunctionTok{addNumbers}\OperatorTok{(}\KeywordTok{new} \BuiltInTok{ArrayList}\OperatorTok{\textless{}}\BuiltInTok{Number}\OperatorTok{\textgreater{}());}
+\end{Highlighting}
+\end{Shaded}
+
+\section{Type erase}\label{type-erase}
+
+\subsection{Type erase process}\label{type-erase-process}
+
+Java的泛型是编译时有效的，在运行时，所有泛型参数会被编译器擦除。擦除的规则如下：
+
+\begin{itemize}
+\tightlist
+\item
+  如果参数是有Bound的，则会替换成这个Bound
+\item
+  如果是Unbounded，则会替换成Object
+\end{itemize}
+
+如下所示：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \KeywordTok{class} \BuiltInTok{Node}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}} \OperatorTok{\{}                         \CommentTok{// public class Node \{}
+    \KeywordTok{private}\NormalTok{ T data}\OperatorTok{;}                            \CommentTok{//     private Object data;}
+    \KeywordTok{private} \BuiltInTok{Node}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}}\NormalTok{ next}\OperatorTok{;}                      \CommentTok{//     private Node next;}
+    \KeywordTok{public} \BuiltInTok{Node}\OperatorTok{(}\NormalTok{T data}\OperatorTok{,} \BuiltInTok{Node}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}}\NormalTok{ next}\OperatorTok{)} \OperatorTok{\{}        \CommentTok{//     public Node(Object data, Node next) \{}
+        \KeywordTok{this}\NormalTok{ data }\OperatorTok{=}\NormalTok{ data}\OperatorTok{;}                      \CommentTok{//         this data = data;}
+        \KeywordTok{this}\NormalTok{ next }\OperatorTok{=}\NormalTok{ next}\OperatorTok{;}                      \CommentTok{//         this next = next;}
+    \OperatorTok{\}}                                          \CommentTok{//     \}}
+                                               \CommentTok{// }
+    \KeywordTok{public}\NormalTok{ T }\FunctionTok{getData}\OperatorTok{()} \OperatorTok{\{} \ControlFlowTok{return}\NormalTok{ data}\OperatorTok{;} \OperatorTok{\}}        \CommentTok{//       public Object getData() \{ return data; \}}
+\OperatorTok{\}}                                              \CommentTok{// \}}
+
+\KeywordTok{public} \KeywordTok{class} \BuiltInTok{Node}\OperatorTok{\textless{}}\NormalTok{T }\KeywordTok{extends} \BuiltInTok{Comparable}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}\textgreater{}} \OperatorTok{\{}   \CommentTok{// public class Node \{}
+    \KeywordTok{private}\NormalTok{ T data}\OperatorTok{;}                            \CommentTok{//     private Comparable data;}
+    \KeywordTok{private} \BuiltInTok{Node}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}}\NormalTok{ next}\OperatorTok{;}                      \CommentTok{//     private Node next;}
+    \KeywordTok{public} \BuiltInTok{Node}\OperatorTok{(}\NormalTok{T data}\OperatorTok{,} \BuiltInTok{Node}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}}\NormalTok{ next}\OperatorTok{)} \OperatorTok{\{}        \CommentTok{//     public Node(Comparable data, Node next) \{}
+        \KeywordTok{this}\OperatorTok{.}\FunctionTok{data} \OperatorTok{=}\NormalTok{ data}\OperatorTok{;}                      \CommentTok{//         this.data = data;}
+        \KeywordTok{this}\OperatorTok{.}\FunctionTok{next} \OperatorTok{=}\NormalTok{ next}\OperatorTok{;}                      \CommentTok{//         this.next = next;}
+    \OperatorTok{\}}                                          \CommentTok{//     \}}
+                                               \CommentTok{// }
+    \KeywordTok{public}\NormalTok{ T }\FunctionTok{getData}\OperatorTok{()} \OperatorTok{\{} \ControlFlowTok{return}\NormalTok{ data}\OperatorTok{;} \OperatorTok{\}}        \CommentTok{//     public Comparable getData() \{ return data; \}}
+\OperatorTok{\}}                                              \CommentTok{// \}}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Bridge method}\label{bridge-method}
+
+按照上面的擦除也会带来问题。考虑下面的例子，如果有一个子类：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \KeywordTok{class}\NormalTok{ MyNode }\KeywordTok{extends} \BuiltInTok{Node}\OperatorTok{\textless{}}\BuiltInTok{Integer}\OperatorTok{\textgreater{}} \OperatorTok{\{}       \CommentTok{// public class MyNode extends Node \{}
+    \KeywordTok{public} \FunctionTok{MyNode}\OperatorTok{(}\BuiltInTok{Integer}\NormalTok{ data}\OperatorTok{)} \OperatorTok{\{} \KeywordTok{super}\OperatorTok{(}\NormalTok{data}\OperatorTok{);} \OperatorTok{\}}  \CommentTok{//     public MyNode(Integer data) \{ super(data); \}}
+                                                  \CommentTok{// }
+    \KeywordTok{public} \DataTypeTok{void} \FunctionTok{setData}\OperatorTok{(}\BuiltInTok{Integer}\NormalTok{ data}\OperatorTok{)} \OperatorTok{\{}           \CommentTok{//     public void setData(Integer data) \{}
+        \BuiltInTok{System}\OperatorTok{.}\FunctionTok{out}\OperatorTok{.}\FunctionTok{println}\OperatorTok{(}\StringTok{"MyNode.setData"}\OperatorTok{);}     \CommentTok{//         System.out.println("MyNode.setData");}
+        \KeywordTok{super}\OperatorTok{.}\FunctionTok{setData}\OperatorTok{(}\NormalTok{data}\OperatorTok{);}                      \CommentTok{//         super.setData(data);}
+    \OperatorTok{\}}                                             \CommentTok{//     \}}
+\OperatorTok{\}}                                                 \CommentTok{// \}}
+\end{Highlighting}
+\end{Shaded}
+
+然后，我们考虑如下的代码：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{MyNode mn }\OperatorTok{=} \KeywordTok{new} \FunctionTok{MyNode}\OperatorTok{(}\DecValTok{5}\OperatorTok{);}                     \CommentTok{// MyNode mn = new MyNode(5);}
+\BuiltInTok{Node}\NormalTok{ n }\OperatorTok{=}\NormalTok{ mn}\OperatorTok{;}                                   \CommentTok{// Node n = (MyNode)mn;}
+\NormalTok{n}\OperatorTok{.}\FunctionTok{setData}\OperatorTok{(}\StringTok{"Hello"}\OperatorTok{);}                            \CommentTok{// n.setData("Hello");}
+\BuiltInTok{Integer}\NormalTok{ x }\OperatorTok{=}\NormalTok{ mn}\OperatorTok{.}\FunctionTok{data}\OperatorTok{;}                           \CommentTok{// Integer x = (String)mn.data;}
+\end{Highlighting}
+\end{Shaded}
+
+这里调用setData则会参数类型不能匹配。为了解决这个问题，Java编译器会生成一个Bridge method:
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \DataTypeTok{void} \FunctionTok{setData}\OperatorTok{(}\BuiltInTok{Object}\NormalTok{ data}\OperatorTok{)} \OperatorTok{\{}
+    \FunctionTok{setData}\OperatorTok{((}\BuiltInTok{Integer}\OperatorTok{)}\NormalTok{ data}\OperatorTok{);}
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+\section{Q\&A}\label{qa}
+
+\subsection{List\textless?\textgreater{} vs List\textless Object\textgreater{}}\label{list-vs-listobject}
+
+\begin{quote}
+It's important to note that List and List\textless?\textgreater{} are not the same. You can insert an Object, or any subtype of \textgreater Object, into a List. But you can only insert null into a List\textless?\textgreater.
+\end{quote}
+
+\subsection{extends vs super}\label{extends-vs-super}
+
+实际上泛型仅仅是为了做一个编译时的检查，从逻辑上确保程序是类型安全的。假设我们有这样的类定义： Object-\textgreater Parent-\textgreater T-\textgreater Child 我们有这样几种写法：
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{List\textless{}?\textgreater{}} 代表一种未知类型的List，可能是\texttt{List\textless{}Object\textgreater{}}，也可能是\texttt{List\textless{}Child\textgreater{}}，都可以
+\item
+  \texttt{List\textless{}?\ extends\ T\textgreater{}} 代表T或者T的子类的List，可以是\texttt{List\textless{}T\textgreater{}}，也可以是\texttt{List\textless{}Child\textgreater{}}
+\item
+  \texttt{List\textless{}?\ super\ T\textgreater{}} 代表T或者T的父类的List，可以是\texttt{List\textless{}T\textgreater{}，List\textless{}Parent\textgreater{}，List\textless{}Object\textgreater{}}
+\end{itemize}
+
+我们有一个事实就是，Child是一定可以转化T或者Parent的，但是一个T不一定能转化成Child，因为可能会是别的子类。 比如我们现在做两个列表的拷贝，
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \DataTypeTok{static} \OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}} \DataTypeTok{void} \FunctionTok{copy}\OperatorTok{(}\BuiltInTok{List}\NormalTok{ dest}\OperatorTok{,} \BuiltInTok{List}\NormalTok{ src}\OperatorTok{)}
+\end{Highlighting}
+\end{Shaded}
+
+想实现从一个列表拷贝到另一个列表，比如
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\BuiltInTok{List}\OperatorTok{\textless{}}\NormalTok{Parent}\OperatorTok{\textgreater{}}\NormalTok{ parents}\OperatorTok{;}
+\BuiltInTok{List}\OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}}\NormalTok{ ts}\OperatorTok{;}
+\BuiltInTok{List}\OperatorTok{\textless{}}\NormalTok{Child}\OperatorTok{\textgreater{}}\NormalTok{ childs}\OperatorTok{;}
+\end{Highlighting}
+\end{Shaded}
+
+基于上面说的类的继承的事实，ts/childs显然是可以转化成parents的，但是ts无法确保能转化成childs。因此我们的拷贝方法要这样定义：
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{public} \KeywordTok{class} \BuiltInTok{Collections} \OperatorTok{\{} 
+  \KeywordTok{public} \DataTypeTok{static} \OperatorTok{\textless{}}\NormalTok{T}\OperatorTok{\textgreater{}} \DataTypeTok{void}\NormalTok{ copy  }
+  \OperatorTok{(} \BuiltInTok{List}\OperatorTok{\textless{}?} \KeywordTok{super}\NormalTok{ T}\OperatorTok{\textgreater{}}\NormalTok{ dest}\OperatorTok{,} \BuiltInTok{List}\OperatorTok{\textless{}?} \KeywordTok{extends}\NormalTok{ T}\OperatorTok{\textgreater{}}\NormalTok{ src}\OperatorTok{)} \OperatorTok{\{}  \CommentTok{// uses bounded wildcards }
+      \ControlFlowTok{for} \OperatorTok{(}\DataTypeTok{int}\NormalTok{ i}\OperatorTok{=}\DecValTok{0}\OperatorTok{;}\NormalTok{ i}\OperatorTok{\textless{}}\NormalTok{src}\OperatorTok{.}\FunctionTok{size}\OperatorTok{();}\NormalTok{ i}\OperatorTok{++)} 
+\NormalTok{        dest}\OperatorTok{.}\FunctionTok{set}\OperatorTok{(}\NormalTok{i}\OperatorTok{,}\NormalTok{src}\OperatorTok{.}\FunctionTok{get}\OperatorTok{(}\NormalTok{i}\OperatorTok{));} 
+  \OperatorTok{\}} 
+\OperatorTok{\}}
+\end{Highlighting}
+\end{Shaded}
+
+因为在desc.set()方法中，需要的是一个能够转化为T的对象的，src中\textless? extends T\textgreater{} 保证了src中的元素一定是一个T。
+
+See also:
+
+\begin{itemize}
+\tightlist
+\item
+  \href{https://docs.oracle.com/javase/tutorial/java/generics/index.html}{Lesson: Generics (Updated)}
+\end{itemize}
+
+
+\end{document}
