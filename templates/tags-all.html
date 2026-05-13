@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}All Tags - LaTeX Blog{% endblock %}
+
+{% block content %}
+<div class="post-list">
+    <h1>Tags</h1>
+    <p>Browse posts by category:</p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.5rem;">
+        {% for tag in tags %}
+        <a href="{{ root_path }}tags/{{ tag.name }}/" class="tag" style="padding: 0.5em 0.9em; font-size: 0.9rem;">
+            {{ tag.name }} <span style="color: var(--color-text-secondary); font-size: 0.85em;">({{ tag.count }})</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

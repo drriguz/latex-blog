@@ -33,8 +33,13 @@
 
 <body>
     <header class="site-header">
-        <nav>
+        <nav style="display: flex; justify-content: space-between; align-items: center;">
             <a href="{{ root_path }}" class="site-title">一个日牯子</a>
+            <div style="display: flex; gap: 1.2rem; font-size: 0.9rem;">
+                <a href="{{ root_path }}" style="text-decoration: none; color: var(--color-text);">Home</a>
+                <a href="{{ root_path }}tags-all/" style="text-decoration: none; color: var(--color-text);">Tags</a>
+                <a href="https://github.com/drriguz" target="_blank" style="text-decoration: none; color: var(--color-text);">GitHub</a>
+            </div>
         </nav>
     </header>
     <main>

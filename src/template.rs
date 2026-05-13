@@ -53,3 +53,25 @@ pub fn render_tag_index(
     let html = tera.render("tag.html", &ctx)?;
     Ok(html)
 }
+
+pub fn render_tags_all(
+    tera: &Tera,
+    tags_with_counts: &[(String, usize)],
+) -> Result<String> {
+    let tags: Vec<std::collections::HashMap<&str, tera::Value>> = tags_with_counts
+        .iter()
+        .map(|(name, count)| {
+            let mut m = std::collections::HashMap::new();
+            m.insert("name", tera::to_value(name).unwrap());
+            m.insert("count", tera::to_value(count).unwrap());
+            m
+        })
+        .collect();
+    
+    let mut ctx = Context::new();
+    ctx.insert("tags", &tags);
+    ctx.insert("root_path", "");
+    ctx.insert("lang", "en");
+    let html = tera.render("tags-all.html", &ctx)?;
+    Ok(html)
+}

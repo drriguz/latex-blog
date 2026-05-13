@@ -297,11 +297,13 @@ pre code {
     border-radius: 0;
     font-size: 1em;
     display: block;
+    font-family: var(--font-mono);
 }
 
 pre code.hljs {
     padding: 0.7em 0.9em;
     background: var(--color-bg-code);
+    font-family: var(--font-mono);
 }
 
 /* Tables */
@@ -358,6 +360,60 @@ figcaption {
     margin: 0.9em 0;
     overflow-x: auto;
     overflow-y: hidden;
+    position: relative;
+}
+
+.katex-display::after {
+    display: none;
+}
+
+.katex-display > .base > .mrow {
+    display: flex;
+    justify-content: center;
+}
+
+/* Ensure equation tags are right-aligned */
+.katex-display .katex {
+    display: inline-block;
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 2rem 0;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.pagination a,
+.pagination span {
+    padding: 0.4em 0.7em;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    font-size: 0.9rem;
+}
+
+.pagination a {
+    color: var(--color-link);
+    cursor: pointer;
+}
+
+.pagination a:hover {
+    background: var(--color-tag-bg);
+    text-decoration: none;
+}
+
+.pagination span.current {
+    background: var(--color-link);
+    color: #ffffff;
+    border-color: var(--color-link);
+    font-weight: 600;
+}
+
+.pagination span.dots {
+    border: none;
 }
 
 /* Post List (Index) */
