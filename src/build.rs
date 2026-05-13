@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use crate::metadata::{self, PostMeta};
@@ -40,15 +40,18 @@ pub fn build_site(root: &Path) -> Result<()> {
         std::fs::create_dir_all(&post_output_dir)?;
 
         // 1. Convert to HTML via Pandoc
-        // Prefer post.md (markdown) for better code highlighting; fall back to post.tex
+        // Prefer post.md (markdown) for HTML; fall back to extracting body from post.typ
         let md_source = post_source_dir.join("post.md");
-        let tex_source = post_source_dir.join("post.tex");
+        let typ_source = post_source_dir.join("post.typ");
+
         let html_fragment = if md_source.exists() {
             println!("[pandoc] Converting {} (from markdown) ...", post.title);
             run_pandoc_md(&md_source, &shared_dir)?
+        } else if typ_source.exists() {
+            println!("[pandoc] Converting {} (from typst body) ...", post.title);
+            run_pandoc_typ_body(&typ_source, &shared_dir)?
         } else {
-            println!("[pandoc] Converting {} (from latex) ...", post.title);
-            run_pandoc(&tex_source, &shared_dir)?
+            anyhow::bail!("No source file found for post: {}", post.source_dir);
         };
 
         // 2. Render full HTML page with template
@@ -62,15 +65,23 @@ pub fn build_site(root: &Path) -> Result<()> {
         )?;
         std::fs::write(post_output_dir.join("index.html"), &full_html)?;
 
-        // 3. Compile PDF via XeLaTeX
-        println!("[xelatex] Compiling {} ...", post.title);
-        match run_xelatex(&post_source_dir, &shared_dir) {
-            Ok(pdf_path) => {
-                std::fs::copy(&pdf_path, post_output_dir.join("post.pdf"))?;
-                println!("  -> PDF generated.");
-            }
-            Err(e) => {
-                eprintln!("  -> PDF compilation failed: {}. Skipping PDF.", e);
+        // 3. Compile PDF via Typst
+        if typ_source.exists() {
+            println!("[typst] Compiling {} ...", post.title);
+            match run_typst(&typ_source, root) {
+                Ok(()) => {
+                    let pdf_path = typ_source.with_extension("pdf");
+                    if pdf_path.exists() {
+                        std::fs::copy(&pdf_path, post_output_dir.join("post.pdf"))?;
+                        let _ = std::fs::remove_file(&pdf_path);
+                        println!("  -> PDF generated.");
+                    } else {
+                        eprintln!("  -> PDF not found after typst compile.");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("  -> Typst compilation failed: {}. Skipping PDF.", e);
+                }
             }
         }
 
@@ -111,12 +122,17 @@ fn discover_posts(posts_dir: &Path) -> Result<Vec<PostMeta>> {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            let tex_file = path.join("post.tex");
-            if tex_file.exists() {
-                match metadata::parse_metadata(&tex_file) {
-                    Ok(meta) => posts.push(meta),
-                    Err(e) => eprintln!("Warning: Failed to parse {}: {}", tex_file.display(), e),
-                }
+            let typ_file = path.join("post.typ");
+
+            let meta = if typ_file.exists() {
+                metadata::parse_metadata(&typ_file)
+            } else {
+                continue;
+            };
+
+            match meta {
+                Ok(m) => posts.push(m),
+                Err(e) => eprintln!("Warning: Failed to parse {}: {}", path.display(), e),
             }
         }
     }
@@ -144,48 +160,79 @@ fn generate_tag_pages(tera: &tera::Tera, posts: &[PostMeta], output_dir: &Path) 
     Ok(())
 }
 
-fn run_pandoc(tex_path: &Path, shared_dir: &Path) -> Result<String> {
-    let output = Command::new("pandoc")
-        .arg(tex_path)
-        .arg("--from=latex+raw_tex") // Preserve unknown LaTeX macros
-        .arg("--to=html5")
-        .arg("--standalone") // Required for TOC generation
-        .arg("--toc") // Generate table of contents
-        .arg("--toc-depth=3") // TOC depth up to level 3 headers
-        .arg("--number-sections") // Add section numbering
-        .arg("--citeproc") // Process citations
-        .arg(format!(
-            "--bibliography={}",
-            shared_dir.join("references.bib").display()
-        ))
-        .arg(format!(
-            "--csl={}",
-            shared_dir.join("numeric.csl").display()
-        ))
-        .arg("--mathjax") // outputs math in a format KaTeX auto-render can pick up
-        .arg("--syntax-highlighting=none") // Let highlight.js handle syntax highlighting
-        .arg(format!(
-            "--resource-path={}:{}",
-            tex_path.parent().unwrap().display(),
-            shared_dir.display()
-        ))
-        .arg(format!(
-            "--lua-filter={}",
-            shared_dir.join("sidenote.lua").display()
-        ))
-        .arg(format!(
-            "--lua-filter={}",
-            shared_dir.join("codeblock.lua").display()
-        ))
-        .output()
-        .context("Failed to run pandoc. Is pandoc installed?")?;
+fn run_pandoc_typ_body(typ_path: &Path, shared_dir: &Path) -> Result<String> {
+    // Strip Typst template header (#import, #show, #let lines) so Pandoc can parse the body
+    let content = std::fs::read_to_string(typ_path)
+        .with_context(|| format!("Failed to read {}", typ_path.display()))?;
+    let body = strip_typst_header(&content);
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Pandoc failed:\n{}", stderr);
+    let tmp = typ_path.parent().unwrap().join("_temp_body.typ");
+    std::fs::write(&tmp, body.as_bytes())?;
+
+    let result = (|| -> Result<String> {
+        let output = Command::new("pandoc")
+            .arg(&tmp)
+            .arg("--from=typst")
+            .arg("--to=html5")
+            .arg("--standalone")
+            .arg("--toc")
+            .arg("--toc-depth=3")
+            .arg("--number-sections")
+            .arg("--mathjax")
+            .arg("--syntax-highlighting=none")
+            .arg(format!(
+                "--resource-path={}:{}",
+                typ_path.parent().unwrap().display(),
+                shared_dir.display()
+            ))
+            .arg(format!(
+                "--lua-filter={}",
+                shared_dir.join("codeblock.lua").display()
+            ))
+            .output()
+            .context("Failed to run pandoc. Is pandoc installed?")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Pandoc (typst body) failed:\n{}", stderr);
+        }
+
+        extract_body(&output.stdout)
+    })();
+
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
+fn strip_typst_header(content: &str) -> String {
+    let mut lines = content.lines().peekable();
+    let mut body_start = 0;
+
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim();
+        // Skip import, show, and let lines that form the template header
+        if trimmed.starts_with("#import")
+            || trimmed.starts_with("#show:")
+            || trimmed.starts_with("#show:")
+            || (trimmed.starts_with("#let") && !trimmed.contains("="))
+            || trimmed.is_empty()
+        {
+            body_start += line.len() + 1;
+            continue;
+        }
+        // Also skip the closing ) of the #show block if it's alone on a line
+        if trimmed == ")" {
+            body_start += line.len() + 1;
+            continue;
+        }
+        break;
     }
 
-    extract_body(&output.stdout)
+    if body_start > 0 {
+        content[body_start..].trim_start().to_string()
+    } else {
+        content.to_string()
+    }
 }
 
 fn run_pandoc_md(md_path: &Path, shared_dir: &Path) -> Result<String> {
@@ -198,7 +245,7 @@ fn run_pandoc_md(md_path: &Path, shared_dir: &Path) -> Result<String> {
         .arg("--toc-depth=3")
         .arg("--number-sections")
         .arg("--mathjax")
-        .arg("--syntax-highlighting=none") // Let highlight.js handle syntax highlighting
+        .arg("--syntax-highlighting=none")
         .arg(format!(
             "--lua-filter={}",
             shared_dir.join("codeblock.lua").display()
@@ -222,58 +269,33 @@ fn run_pandoc_md(md_path: &Path, shared_dir: &Path) -> Result<String> {
 fn extract_body(stdout: &[u8]) -> Result<String> {
     let html = String::from_utf8(stdout.to_vec()).context("Pandoc produced invalid UTF-8")?;
 
-    // Extract just the body content from the standalone HTML (remove <html>, <head>, <body> tags)
-    // Find content between <body> and </body>
     let body_start = html.find("<body>").map(|i| i + 6);
     let body_end = html.rfind("</body>");
 
     let content = if let (Some(start), Some(end)) = (body_start, body_end) {
         html[start..end].to_string()
     } else {
-        // Fallback if body tags not found
         html
     };
 
     Ok(content)
 }
 
-fn run_xelatex(post_dir: &Path, shared_dir: &Path) -> Result<PathBuf> {
-    let tex_file = post_dir.join("post.tex");
+fn run_typst(typ_path: &Path, project_root: &Path) -> Result<()> {
+    let status = Command::new("typst")
+        .arg("compile")
+        .arg("--root")
+        .arg(project_root)
+        .arg(typ_path)
+        .arg(typ_path.with_extension("pdf"))
+        .status()
+        .context("Failed to run typst. Is typst installed?")?;
 
-    // Run xelatex twice for cross-references
-    for pass in 1..=2 {
-        let output = Command::new("xelatex")
-            .arg("-interaction=nonstopmode")
-            .arg("-halt-on-error")
-            .arg(format!("-output-directory={}", post_dir.display()))
-            .env(
-                "TEXINPUTS",
-                format!("{}:{}:", post_dir.display(), shared_dir.display()),
-            )
-            .arg(&tex_file)
-            .output()
-            .context("Failed to run xelatex. Is texlive installed?")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if pass == 2 {
-                anyhow::bail!(
-                    "XeLaTeX failed (pass {}):\nstdout: {}\nstderr: {}",
-                    pass,
-                    stdout.chars().take(2000).collect::<String>(),
-                    stderr.chars().take(2000).collect::<String>()
-                );
-            }
-        }
+    if !status.success() {
+        anyhow::bail!("Typst compilation failed for {}", typ_path.display());
     }
 
-    let pdf_path = post_dir.join("post.pdf");
-    if pdf_path.exists() {
-        Ok(pdf_path)
-    } else {
-        anyhow::bail!("PDF not generated at {}", pdf_path.display())
-    }
+    Ok(())
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {

@@ -13,28 +13,19 @@ pub struct PostMeta {
     pub source_dir: String,
 }
 
-pub fn parse_metadata(tex_path: &Path) -> Result<PostMeta> {
-    let content = std::fs::read_to_string(tex_path)
-        .with_context(|| format!("Failed to read {}", tex_path.display()))?;
+pub fn parse_metadata(typ_path: &Path) -> Result<PostMeta> {
+    let content = std::fs::read_to_string(typ_path)
+        .with_context(|| format!("Failed to read {}", typ_path.display()))?;
 
-    let title = extract_command(&content, "blogtitle").unwrap_or_else(|| "Untitled".to_string());
-    let date = extract_command(&content, "blogdate").unwrap_or_else(|| "1970-01-01".to_string());
-    let tags_str = extract_command(&content, "blogtags").unwrap_or_default();
-    let lang = extract_command(&content, "bloglang").unwrap_or_else(|| "en".to_string());
-    let summary = extract_command(&content, "blogsummary").unwrap_or_default();
+    let title = extract_typst_param(&content, "title").unwrap_or_else(|| "Untitled".to_string());
+    let date = extract_typst_param(&content, "date").unwrap_or_else(|| "1970-01-01".to_string());
+    let tags_str = extract_typst_param(&content, "tags").unwrap_or_default();
+    let lang = extract_typst_param(&content, "lang").unwrap_or_else(|| "en".to_string());
+    let summary = extract_typst_param(&content, "summary").unwrap_or_default();
 
-    let tags: Vec<String> = if tags_str.is_empty() {
-        vec![]
-    } else {
-        tags_str
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    };
+    let tags = parse_typst_tags(&tags_str);
 
-    // Derive slug from the parent directory name, stripping the date prefix
-    let source_dir = tex_path
+    let source_dir = typ_path
         .parent()
         .and_then(|p| p.file_name())
         .and_then(|n| n.to_str())
@@ -54,13 +45,26 @@ pub fn parse_metadata(tex_path: &Path) -> Result<PostMeta> {
     })
 }
 
-fn extract_command(content: &str, command: &str) -> Option<String> {
-    let pattern = format!(r"\\{}\{{([^}}]*)\}}", regex::escape(command));
+fn extract_typst_param(content: &str, param: &str) -> Option<String> {
+    let pattern = format!(
+        r#"(?:^|\s|,){}\s*:\s*"((?:[^"\\]|\\.)*)""#,
+        regex::escape(param)
+    );
     let re = Regex::new(&pattern).ok()?;
-    re.captures(content).map(|caps| caps[1].to_string())
+    let caps = re.captures(content)?;
+    Some(caps[1].replace("\\\"", "\"").replace("\\\\", "\\"))
 }
 
-/// Strip date prefix (YYYY-MM-DD-) from directory name to get slug
+fn parse_typst_tags(tags_str: &str) -> Vec<String> {
+    if tags_str.is_empty() {
+        return vec![];
+    }
+    let re = Regex::new(r#""([^"]*)""#).unwrap();
+    re.captures_iter(tags_str)
+        .map(|caps| caps[1].to_string())
+        .collect()
+}
+
 fn derive_slug(dir_name: &str) -> String {
     let date_prefix = Regex::new(r"^\d{4}-\d{2}-\d{2}-").unwrap();
     date_prefix.replace(dir_name, "").to_string()
@@ -71,23 +75,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_command() {
-        let content = r#"\blogtitle{Hello World}
-\blogdate{2025-12-01}
-\blogtags{rust, latex}"#;
+    fn test_extract_typst_param() {
+        let content = r#"#show: blog-post.with(
+  title: "Understanding FFT",
+  date: "2025-12-01",
+  tags: ("math", "algorithms", "signal-processing"),
+  lang: "en",
+  summary: "An intro to FFT",
+)"#;
         assert_eq!(
-            extract_command(content, "blogtitle"),
-            Some("Hello World".into())
+            extract_typst_param(content, "title"),
+            Some("Understanding FFT".into())
         );
         assert_eq!(
-            extract_command(content, "blogdate"),
+            extract_typst_param(content, "date"),
             Some("2025-12-01".into())
         );
+        assert_eq!(extract_typst_param(content, "lang"), Some("en".into()));
         assert_eq!(
-            extract_command(content, "blogtags"),
-            Some("rust, latex".into())
+            extract_typst_param(content, "summary"),
+            Some("An intro to FFT".into())
         );
-        assert_eq!(extract_command(content, "bloglang"), None);
+    }
+
+    #[test]
+    fn test_parse_typst_tags() {
+        assert_eq!(
+            parse_typst_tags(r#"("math", "algorithms")"#),
+            vec!["math", "algorithms"]
+        );
+        assert_eq!(parse_typst_tags(r#"("rust",)"#), vec!["rust"]);
+        assert_eq!(parse_typst_tags(""), Vec::<String>::new());
     }
 
     #[test]

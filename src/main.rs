@@ -10,7 +10,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(
     name = "latex-blog",
-    about = "A static blog generator powered by XeLaTeX and Pandoc"
+    about = "A static blog generator powered by Typst and Pandoc"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -66,15 +66,15 @@ fn cmd_new(root: &PathBuf, title: &str, tags: &str, _lang: &str) -> Result<()> {
 
     std::fs::create_dir_all(post_dir.join("images"))?;
 
-    let template = std::fs::read_to_string(root.join("templates/new-post.tex"))?;
+    let template = std::fs::read_to_string(root.join("templates/new-post.typ"))?;
     let content = template
         .replace("__TITLE__", title)
         .replace("__DATE__", &date)
         .replace("__TAGS__", tags);
 
-    std::fs::write(post_dir.join("post.tex"), content)?;
+    std::fs::write(post_dir.join("post.typ"), content)?;
 
-    println!("Created new post: posts/{}/post.tex", dir_name);
+    println!("Created new post: posts/{}/post.typ", dir_name);
     Ok(())
 }
 
